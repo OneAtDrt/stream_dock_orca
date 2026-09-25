@@ -5,9 +5,9 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 ## [v0.2.1](https://github.com/OneAtDrt/stream_deck_orca/releases/tag/v0.2.1) — Subagent live view
 
 ### Fixed
-* Pressing a subagent key opened the main agent's terminal instead of the subagent. It now opens (or re-focuses) an Orca terminal tab `↳ <type> <id>` that follows the subagent's transcript live: task, messages, tool calls and shortened results. It falls back to the main agent's terminal if the view can't be opened
-* Files: `plugin/subagent-view.js` (new), `plugin/agents.js`, `plugin/index.js`, `plugin/agents.test.js`, `README.md`, version 0.2.1 in `manifest.json`, `package.json`, `package-lock.json`
-* Tests: 14 (added: subagent transcript paths, shell quoting, transcript formatting)
+* Pressing a subagent key opened the main agent's terminal instead of the subagent. It now opens (or re-focuses) an Orca terminal tab `↳ <type> <id>` that follows the subagent's transcript live: task, messages, tool calls and shortened results. It falls back to the main agent's terminal if the view can't be opened ([6eb1b17](https://github.com/OneAtDrt/stream_deck_orca/commit/6eb1b17dfd338e08dce3c6095bdfb032d1d54628))
+* Files: `plugin/subagent-view.js` (new), `plugin/agents.js`, `plugin/index.js`, `plugin/agents.test.js`, `README.md`, version 0.2.1 in `manifest.json`, `package.json`, `package-lock.json` ([6eb1b17](https://github.com/OneAtDrt/stream_deck_orca/commit/6eb1b17dfd338e08dce3c6095bdfb032d1d54628))
+* Tests: 14 (added: subagent transcript paths, shell quoting, transcript formatting) ([6eb1b17](https://github.com/OneAtDrt/stream_deck_orca/commit/6eb1b17dfd338e08dce3c6095bdfb032d1d54628))
 
 ## [v0.2.0](https://github.com/OneAtDrt/stream_deck_orca/releases/tag/v0.2.0) — Subagent keys
 

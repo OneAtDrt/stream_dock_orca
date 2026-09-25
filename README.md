@@ -45,8 +45,8 @@ Agent keys fill in priority order: waiting, working (incl. SUBS), done, idle. Ea
 ## Install
 
 ```sh
-git clone https://github.com/OneAtDrt/stream_deck_orca.git
-cd stream_deck_orca
+git clone https://github.com/OneAtDrt/stream_dock_orca.git
+cd stream_dock_orca
 ./install.sh
 ```
 

@@ -1,0 +1,41 @@
+{
+  "Actions": [
+    {
+      "Icon": "static/icon.svg",
+      "Name": "Orca Agent",
+      "DisableAutomaticStates": true,
+      "States": [{ "Image": "static/icon.svg", "TitleAlignment": "bottom", "FontSize": "10" }],
+      "Settings": {},
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false,
+      "Tooltip": "Shows one Orca agent (project, task, status). Press to jump to its terminal.",
+      "UUID": "com.oneatdrt.orca-agents.slot"
+    },
+    {
+      "Icon": "static/icon.svg",
+      "Name": "Orca Summary",
+      "DisableAutomaticStates": true,
+      "States": [{ "Image": "static/icon.svg", "TitleAlignment": "bottom", "FontSize": "10" }],
+      "Settings": {},
+      "Controllers": ["Keypad"],
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false,
+      "Tooltip": "Counts of working / waiting / done agents. Press to jump to the agent that needs you.",
+      "UUID": "com.oneatdrt.orca-agents.summary"
+    }
+  ],
+  "SDKVersion": 1,
+  "Author": "OneAtDrt",
+  "Name": "Orca Agents",
+  "Icon": "static/icon.svg",
+  "CodePathMac": "plugin/index.js",
+  "Description": "Live status of Orca AI agents (Claude Code, Codex, ...) on your Stream Dock keys.",
+  "Category": "Orca Agents",
+  "CategoryIcon": "static/icon.svg",
+  "Version": "0.1.0",
+  "URL": "https://github.com/MiraboxSpace/StreamDock-Plugin-SDK",
+  "OS": [{ "Platform": "mac", "MinimumVersion": "10.11" }],
+  "Software": { "MinimumVersion": "3.10.191.0421" },
+  "Nodejs": { "Version": "20" }
+}

@@ -8,5 +8,5 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 * **Orca Summary** key action: counts of waiting / working / done agents; press to jump to the agent that needs you
 * Status from Orca agent hooks (`last-status.json`) joined with `orca terminal list`, falling back to the Claude Code title spinner; done fades to idle after 30 min
 * Priority ordering (waiting → working → done → idle), per-key slot numbers persisted in key settings
-* `install.sh` installer, unit tests (`node --test`)
+* `install.sh` installer, unit tests (`node --test`) ([39d4045](https://github.com/OneAtDrt/stream_deck_orca/commit/39d40454b57b98105e515973f8fb5145ed2f72dd))
 * Files: `com.oneatdrt.orca-agents.sdPlugin/manifest.json`, `plugin/index.js`, `plugin/agents.js`, `plugin/render.js`, `plugin/agents.test.js`, `static/icon.svg`, `install.sh`, `README.md`

@@ -2,6 +2,12 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org).
 
+## [v0.2.2](https://github.com/OneAtDrt/stream_deck_orca/releases/tag/v0.2.2) — README previews
+
+### Added
+* README: preview images of every state (`scripts/previews.js`)
+* Files: `scripts/previews.js` (new), `docs/previews/*.png` (new), `README.md`; version 0.2.2 in `manifest.json`, `package.json`, `package-lock.json`
+
 ## [v0.2.1](https://github.com/OneAtDrt/stream_deck_orca/releases/tag/v0.2.1) — Subagent live view
 
 ### Fixed

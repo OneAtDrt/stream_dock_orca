@@ -4,6 +4,17 @@
 
 A [Mirabox Stream Dock](https://mirabox.net) plugin that shows the live status of your [Orca](https://orca.stably.ai) AI agents (Claude Code, Codex, ...) on Stream Dock keys. Press a key to jump to that agent's terminal in Orca.
 
+## What you'll see
+
+<img src="docs/previews/gallery.png" width="816" alt="A row of keys: an agent with two subagent keys, a waiting agent and the summary key">
+
+A row of keys: an agent whose subagents are still running, its two subagent keys, an agent waiting for you, and the **Orca Summary** key.
+
+<table>
+<tr><td align="center"><img src="docs/previews/agent-waiting.png" width="144" alt="WAITING: needs you"><br><sub>WAITING: needs you</sub></td><td align="center"><img src="docs/previews/agent-working.png" width="144" alt="WORKING"><br><sub>WORKING</sub></td><td align="center"><img src="docs/previews/agent-subagents.png" width="144" alt="SUBS ×2: own turn over, 2 subagents running"><br><sub>SUBS ×2: own turn over, 2 subagents running</sub></td><td align="center"><img src="docs/previews/subagent-1.png" width="144" alt="Subagent key 1/2"><br><sub>Subagent key 1/2</sub></td><td align="center"><img src="docs/previews/subagent-2.png" width="144" alt="Subagent key 2/2"><br><sub>Subagent key 2/2</sub></td></tr>
+<tr><td align="center"><img src="docs/previews/agent-done.png" width="144" alt="DONE (last 30 min)"><br><sub>DONE (last 30 min)</sub></td><td align="center"><img src="docs/previews/agent-idle.png" width="144" alt="IDLE"><br><sub>IDLE</sub></td><td align="center"><img src="docs/previews/summary.png" width="144" alt="Orca Summary"><br><sub>Orca Summary</sub></td><td align="center"><img src="docs/previews/empty.png" width="144" alt="Empty slot"><br><sub>Empty slot</sub></td></tr>
+</table>
+
 ## Actions
 
 | Action | Shows | Press |
@@ -84,6 +95,8 @@ cd com.oneatdrt.orca-agents.sdPlugin/plugin
 npm install
 npm test
 ```
+
+Regenerate the README preview images (`docs/previews/`) with `node scripts/previews.js` (needs Google Chrome). It runs made-up sample agents through the real `plugin/agents.js` and `plugin/render.js`.
 
 The plugin writes its log to `plugin/log/plugin.log` inside the installed plugin folder.
 

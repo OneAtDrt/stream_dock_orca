@@ -12,7 +12,16 @@ const HOOK_STATUS_FILE = process.env.ORCA_HOOK_STATUS_FILE
 // A finished turn stays "done" (green) this long, then fades to "idle" (grey).
 const DONE_FADE_MS = 30 * 60 * 1000;
 
-const STATUS_ORDER = { waiting: 0, working: 1, done: 2, idle: 3 };
+// "subagents": the main agent's own turn is over but its subagents are still running.
+const STATUS_ORDER = { waiting: 0, working: 1, subagents: 1, done: 2, idle: 3 };
+
+// Hook events from the main agent itself (no toolAgentId) that mean it is still mid-turn.
+const LEAD_BUSY_EVENTS = new Set(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure']);
+
+// Orca's per-pane subagent roster states that mean the subagent is still running.
+const RUNNING_SUBAGENT_STATES = new Set(['working', 'blocked', 'waiting']);
+// Subagent tool calls refresh the parent pane's hook entry, so an entry this old means the roster is stale.
+const SUBAGENT_STALE_MS = 30 * 60 * 1000;
 
 // Claude Code prefixes its terminal title with a spinner glyph while busy and ✳ when idle.
 const IDLE_GLYPHS = new Set(['✳']);
@@ -34,6 +43,33 @@ async function listTerminals() {
   return json.result?.terminals || [];
 }
 
+// Meta files never change once written, so successful reads are cached by path.
+const subagentMetaCache = new Map();
+
+async function readSubagentMeta(hookEntries) {
+  const meta = {};
+  const seen = new Set();
+  for (const hook of Object.values(hookEntries)) {
+    for (const s of hook?.payload?.subagents || []) {
+      if (!s?.id || s.description || !RUNNING_SUBAGENT_STATES.has(s.state)) continue;
+      const file = subagentMetaPath(hook.providerSession?.transcriptPath, s.id);
+      if (!file) continue;
+      seen.add(file);
+      if (!subagentMetaCache.has(file)) {
+        try {
+          const json = JSON.parse(await fs.readFile(file, 'utf8'));
+          subagentMetaCache.set(file, { description: typeof json.description === 'string' ? json.description : '' });
+        } catch {
+          continue; // not written yet; retry next refresh
+        }
+      }
+      meta[s.id] = subagentMetaCache.get(file);
+    }
+  }
+  for (const file of subagentMetaCache.keys()) if (!seen.has(file)) subagentMetaCache.delete(file);
+  return meta;
+}
+
 async function readHookStatus() {
   try {
     const json = JSON.parse(await fs.readFile(HOOK_STATUS_FILE, 'utf8'));
@@ -43,18 +79,52 @@ async function readHookStatus() {
   }
 }
 
-function deriveStatus(terminal, hook, now) {
+// Claude Code keeps each subagent's metadata (incl. the Task description) next to the session transcript:
+// <session>.jsonl -> <session>/subagents/agent-<id>.meta.json
+function subagentMetaPath(transcriptPath, id) {
+  if (!transcriptPath || !/\.jsonl$/.test(transcriptPath) || !/^[\w.-]+$/.test(id)) return null;
+  return path.join(transcriptPath.replace(/\.jsonl$/, ''), 'subagents', `agent-${id}.meta.json`);
+}
+
+// Running subagents from Orca's roster (payload.subagents), oldest first.
+function activeSubagents(hook, now, meta = {}) {
+  const roster = hook?.payload?.subagents;
+  if (!Array.isArray(roster) || !roster.length) return [];
+  if (now - (hook.receivedAt || 0) > SUBAGENT_STALE_MS) return [];
+  return roster
+    .filter((s) => s && typeof s.id === 'string' && RUNNING_SUBAGENT_STATES.has(s.state))
+    .map((s) => ({
+      id: s.id,
+      state: s.state,
+      agentType: s.agentType || '',
+      description: (s.description || meta[s.id]?.description || '').replace(/\s+/g, ' ').trim(),
+      startedAt: s.startedAt || 0
+    }))
+    .sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id));
+}
+
+function titleIsBusy(terminal) {
+  const glyph = [...(terminal.title || '')][0] || '';
+  return !IDLE_GLYPHS.has(glyph) && BUSY_GLYPH.test(glyph);
+}
+
+// Orca reports "working" while any subagent runs, and subagent tool calls land on the parent's entry,
+// so with subagents only the main agent's own mid-turn events (or a busy title) mean it is working itself.
+function leadIsBusy(terminal, hook) {
+  if (hook?.payload?.state === 'working' && !hook.toolAgentId && LEAD_BUSY_EVENTS.has(hook.hookEventName)) return true;
+  return titleIsBusy(terminal);
+}
+
+function deriveStatus(terminal, hook, now, subagentCount = 0) {
   const state = hook?.payload?.state;
-  if (state === 'working') return 'working';
   if (state === 'blocked' || state === 'waiting' || state === 'permission') return 'waiting';
+  if (subagentCount > 0) return leadIsBusy(terminal, hook) ? 'working' : 'subagents';
+  if (state === 'working') return 'working';
   if (state === 'done') {
     if (hook.hookEventName === 'SessionStart') return 'idle';
     return now - (hook.stateStartedAt || hook.receivedAt || 0) < DONE_FADE_MS ? 'done' : 'idle';
   }
-
-  const glyph = [...(terminal.title || '')][0] || '';
-  if (!IDLE_GLYPHS.has(glyph) && BUSY_GLYPH.test(glyph)) return 'working';
-  return 'idle';
+  return titleIsBusy(terminal) ? 'working' : 'idle';
 }
 
 function projectLabel(worktreePath) {
@@ -81,13 +151,15 @@ function taskLabel(terminal, hook) {
   return (hook?.payload?.prompt || '').replace(/\s+/g, ' ').trim();
 }
 
-function buildAgents(terminals, hookEntries, now = Date.now()) {
+function buildAgents(terminals, hookEntries, now = Date.now(), subagentMeta = {}) {
   const agents = [];
   for (const terminal of terminals) {
     if (!terminal.agentIdentity || terminal.orphaned || terminal.connected === false) continue;
     const hook = hookEntries[`${terminal.tabId}:${terminal.leafId}`];
-    const status = deriveStatus(terminal, hook, now);
-    const since = hook?.stateStartedAt || hook?.receivedAt || terminal.lastOutputAt || now;
+    const subagents = activeSubagents(hook, now, subagentMeta);
+    const status = deriveStatus(terminal, hook, now, subagents.length);
+    const since = (status === 'subagents' && subagents[0].startedAt)
+      || hook?.stateStartedAt || hook?.receivedAt || terminal.lastOutputAt || now;
     agents.push({
       handle: terminal.handle,
       agent: terminal.agentIdentity,
@@ -95,6 +167,7 @@ function buildAgents(terminals, hookEntries, now = Date.now()) {
       workspace: workspaceLabel(terminal.worktreePath),
       task: taskLabel(terminal, hook),
       status,
+      subagents,
       since,
       lastActivity: Math.max(hook?.receivedAt || 0, terminal.lastOutputAt || 0)
     });
@@ -104,15 +177,39 @@ function buildAgents(terminals, hookEntries, now = Date.now()) {
   agents.sort((a, b) => {
     const byStatus = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
     if (byStatus) return byStatus;
-    if (a.status === 'waiting' || a.status === 'working') return a.since - b.since || a.handle.localeCompare(b.handle);
+    if (STATUS_ORDER[a.status] <= STATUS_ORDER.working) return a.since - b.since || a.handle.localeCompare(b.handle);
     return b.lastActivity - a.lastActivity || a.handle.localeCompare(b.handle);
   });
   return agents;
 }
 
+// Slot order for agent keys: each main agent followed by its running subagents (oldest first).
+// Subagent slots carry the parent's handle, so pressing one opens the parent's terminal.
+function flattenSlots(agents) {
+  const slots = [];
+  for (const agent of agents) {
+    slots.push({ kind: 'agent', ...agent });
+    agent.subagents.forEach((sub, i) => {
+      slots.push({
+        kind: 'subagent',
+        handle: agent.handle,
+        parentProject: agent.project,
+        index: i + 1,
+        total: agent.subagents.length,
+        id: sub.id,
+        agentType: sub.agentType,
+        description: sub.description,
+        status: sub.state === 'working' ? 'working' : 'waiting',
+        since: sub.startedAt || agent.since
+      });
+    });
+  }
+  return slots;
+}
+
 async function loadAgents() {
   const [terminals, hooks] = await Promise.all([listTerminals(), readHookStatus()]);
-  return buildAgents(terminals, hooks);
+  return buildAgents(terminals, hooks, Date.now(), await readSubagentMeta(hooks));
 }
 
 async function focusAgent(handle) {
@@ -120,4 +217,7 @@ async function focusAgent(handle) {
   await new Promise((resolve) => execFile('/usr/bin/open', ['-a', 'Orca'], () => resolve()));
 }
 
-module.exports = { loadAgents, buildAgents, deriveStatus, projectLabel, taskLabel, focusAgent, DONE_FADE_MS };
+module.exports = {
+  loadAgents, buildAgents, flattenSlots, deriveStatus, activeSubagents, subagentMetaPath, projectLabel, taskLabel, focusAgent,
+  DONE_FADE_MS, SUBAGENT_STALE_MS
+};

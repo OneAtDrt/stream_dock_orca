@@ -33,7 +33,7 @@
   "Description": "Live status of Orca AI agents (Claude Code, Codex, ...) on your Stream Dock keys.",
   "Category": "Orca Agents",
   "CategoryIcon": "static/icon.svg",
-  "Version": "0.1.0",
+  "Version": "0.2.0",
   "URL": "https://github.com/MiraboxSpace/StreamDock-Plugin-SDK",
   "OS": [{ "Platform": "mac", "MinimumVersion": "10.11" }],
   "Software": { "MinimumVersion": "3.10.191.0421" },

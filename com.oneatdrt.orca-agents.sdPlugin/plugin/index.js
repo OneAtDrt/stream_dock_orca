@@ -3,8 +3,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const WebSocket = require('ws');
-const { loadAgents, focusAgent } = require('./agents');
-const { renderAgent, renderEmpty, renderError, renderSummary } = require('./render');
+const { loadAgents, flattenSlots, focusAgent } = require('./agents');
+const { renderAgent, renderSubagent, renderEmpty, renderError, renderSummary } = require('./render');
 
 const SLOT_ACTION = 'com.oneatdrt.orca-agents.slot';
 const SUMMARY_ACTION = 'com.oneatdrt.orca-agents.summary';
@@ -19,6 +19,8 @@ const keys = new Map();
 // Slots handed out during this run, including keys on pages that are currently hidden.
 const claimedSlots = new Map();
 let agents = [];
+// Slot keys show main agents, each followed by its running subagents.
+let slots = [];
 let lastError = null;
 let blink = false;
 let refreshing = false;
@@ -75,16 +77,16 @@ async function onPress(context) {
   if (key.action === SUMMARY_ACTION) {
     target = agents.find((a) => a.status === 'waiting')
       || agents.find((a) => a.status === 'done')
-      || agents.find((a) => a.status === 'working');
+      || agents.find((a) => a.status === 'working' || a.status === 'subagents');
   } else {
-    target = agents[key.slotIndex];
+    target = slots[key.slotIndex];
   }
   if (!target) {
     send({ event: 'showAlert', context });
     return;
   }
   await focusAgent(target.handle);
-  log(`focused ${target.handle} (${target.project})`);
+  log(`focused ${target.handle} (${target.project || target.parentProject})`);
 }
 
 async function refresh() {
@@ -92,6 +94,7 @@ async function refresh() {
   refreshing = true;
   try {
     agents = await loadAgents();
+    slots = flattenSlots(agents);
     lastError = null;
   } catch (err) {
     const message = /ENOENT/.test(err.message) ? 'Orca CLI not found' : 'Orca not running';
@@ -110,7 +113,12 @@ function paint(context) {
   let image;
   if (lastError) image = renderError(lastError);
   else if (key.action === SUMMARY_ACTION) image = renderSummary(agents, blink);
-  else image = agents[key.slotIndex] ? renderAgent(agents[key.slotIndex], Date.now(), blink) : renderEmpty(key.slotIndex);
+  else {
+    const slot = slots[key.slotIndex];
+    if (!slot) image = renderEmpty(key.slotIndex);
+    else if (slot.kind === 'subagent') image = renderSubagent(slot, Date.now(), blink);
+    else image = renderAgent(slot, Date.now(), blink);
+  }
 
   if (image === key.lastImage) return;
   key.lastImage = image;

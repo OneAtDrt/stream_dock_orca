@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Orca Agents</title>
+<style>
+  body { margin: 0; padding: 10px 14px; background: #2d2d2d; color: #ddd; font: 13px -apple-system, Helvetica, Arial, sans-serif; }
+  .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+  label { width: 90px; color: #aaa; }
+  select { flex: 1; background: #3a3a3a; color: #eee; border: 1px solid #555; border-radius: 5px; padding: 4px 6px; font-size: 13px; }
+  .hint { color: #888; font-size: 12px; margin: 4px 0 0 100px; line-height: 1.4; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <label for="mainText">Main text</label>
+    <select id="mainText">
+      <option value="auto">Auto: chat when a repo has several agents</option>
+      <option value="task">Chat name</option>
+      <option value="project">Repository</option>
+    </select>
+  </div>
+  <div class="hint">Shown large in the middle of every agent key; the other name is shown small underneath. Applies to all Orca keys.</div>
+  <script src="pi.js"></script>
+</body>
+</html>

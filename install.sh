@@ -15,4 +15,4 @@ if pgrep -x StreamDock >/dev/null; then
   while pgrep -x StreamDock >/dev/null; do sleep 0.5; done
 fi
 open -a StreamDock
-echo "Stream Dock restarted. Drag 'Orca Agent' / 'Orca Summary' from the 'Orca Agents' category onto keys."
+echo "Stream Dock restarted. Actions are in the 'Orca Agents' category: 'Orca Agent', 'Orca Summary' and 'AI Limits'."

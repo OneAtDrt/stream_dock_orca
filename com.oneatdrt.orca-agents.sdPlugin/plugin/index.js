@@ -4,12 +4,19 @@ const fs = require('node:fs');
 const path = require('node:path');
 const WebSocket = require('ws');
 const { loadAgents, flattenSlots, focusAgent, openSubagentView } = require('./agents');
-const { renderAgent, renderSubagent, renderEmpty, renderError, renderSummary } = require('./render');
+const { mainTextFor, renderLimits, LIMIT_PAGES, leftColor, renderAgent, renderSubagent, renderEmpty, renderError, renderSummary } = require('./render');
 
 const SLOT_ACTION = 'com.oneatdrt.orca-agents.slot';
 const SUMMARY_ACTION = 'com.oneatdrt.orca-agents.summary';
+const LIMITS_ACTION = 'com.oneatdrt.orca-agents.limits';
+// Orca refreshes the limits itself; reading its copy once a minute is plenty.
+const LIMITS_REFRESH_MS = 60000;
+const RING_DELAY_MS = 800;
+const RING_REASSERT_MS = 60000;
 const REFRESH_MS = 2000;
 const LOG_FILE = path.join(__dirname, 'log', 'plugin.log');
+const { loadLimits, worstLeft } = require('./limits');
+const { setKnobColor, releaseKnob } = require('./knob-led');
 
 const startup = parseStartupArgs(process.argv);
 const ws = new WebSocket(`ws://127.0.0.1:${startup.port}`);
@@ -24,11 +31,27 @@ let slots = [];
 let lastError = null;
 let blink = false;
 let refreshing = false;
+// AI Limits: last model from Orca ({ claude, gpt }), or null before the first read.
+let limits = null;
+let limitsTimer = null;
+// Global setting (Property Inspector): big text on agent keys = 'auto' | 'task' | 'project'.
+const MAIN_TEXT_MODES = new Set(['auto', 'task', 'project']);
+let mainText = 'auto';
+
+function applyGlobalSettings(settings = {}) {
+  if (!MAIN_TEXT_MODES.has(settings.mainText) || settings.mainText === mainText) return;
+  mainText = settings.mainText;
+  log(`main text: ${mainText}`);
+  for (const context of keys.keys()) paint(context);
+}
 
 ws.on('open', () => {
   log('connected');
   send({ uuid: startup.pluginUuid, event: startup.registerEvent });
+  send({ event: 'getGlobalSettings', context: startup.pluginUuid });
   refresh();
+  refreshLimits();
+  limitsTimer = setInterval(refreshLimits, LIMITS_REFRESH_MS);
   setInterval(refresh, REFRESH_MS);
 });
 
@@ -46,8 +69,19 @@ ws.on('message', (raw) => {
   }
   const { event, action, context, payload = {} } = message;
 
+  if (event === 'didReceiveGlobalSettings') {
+    applyGlobalSettings(payload.settings);
+    return;
+  }
+  // The Property Inspector also sends the change directly, in case global-settings events lag.
+  if (event === 'sendToPlugin' && payload.mainText) {
+    applyGlobalSettings({ mainText: payload.mainText });
+    return;
+  }
+
   if (event === 'willAppear') {
-    const key = { action, slotIndex: null, lastImage: null };
+    const square = payload.controller === 'Keypad';
+    const key = { action, slotIndex: null, lastImage: null, square, knobIndex: square ? -1 : Number(payload.coordinates?.column ?? -1), lastRing: null, ringAt: 0, page: 0 };
     if (action === SLOT_ACTION) {
       key.slotIndex = Number.isInteger(payload.settings?.slotIndex) ? payload.settings.slotIndex : nextFreeSlot();
       claimedSlots.set(context, key.slotIndex);
@@ -61,7 +95,20 @@ ws.on('message', (raw) => {
   }
 
   if (event === 'willDisappear') {
+    const key = keys.get(context);
     keys.delete(context);
+    if (key?.action === LIMITS_ACTION && key.knobIndex >= 0) setTimeout(() => ring(() => releaseKnob(key.knobIndex)), RING_DELAY_MS);
+    return;
+  }
+
+  // AI Limits: press (or knob turn) cycles overview -> Claude -> ChatGPT -> overview.
+  const limitsKey = keys.get(context)?.action === LIMITS_ACTION ? keys.get(context) : null;
+  if (limitsKey && (event === 'keyUp' || event === 'dialDown' || event === 'dialRotate')) {
+    const step = event === 'dialRotate' ? Math.sign(Number(payload.ticks) || 0) : 1;
+    if (!step) return;
+    limitsKey.page = (limitsKey.page + step + LIMIT_PAGES.length) % LIMIT_PAGES.length;
+    paint(context);
+    if (event !== 'dialRotate') refreshLimits();
     return;
   }
 
@@ -98,6 +145,50 @@ async function onPress(context) {
   log(`focused ${target.handle} (${target.project || target.parentProject})`);
 }
 
+async function refreshLimits() {
+  try {
+    limits = await loadLimits();
+  } catch (err) {
+    log(`limits refresh failed: ${err.message}`);
+  }
+  for (const [context, key] of keys) if (key.action === LIMITS_ACTION) paint(context);
+  setTimeout(paintLimitRings, RING_DELAY_MS);
+}
+
+// Knob ring = colour of the provider with the least left (green / amber / red).
+function paintLimitRings() {
+  const worst = limits ? worstLeft(limits) : null;
+  const now = Date.now();
+  for (const key of keys.values()) {
+    if (key.action !== LIMITS_ACTION || key.knobIndex < 0) continue;
+    const rgb = worst == null ? null : hexToRgb(leftColor(worst));
+    const tag = rgb ? rgb.join(',') : 'released';
+    if (tag === key.lastRing && now - key.ringAt < RING_REASSERT_MS) continue;
+    if (ring(() => (rgb ? setKnobColor(key.knobIndex, rgb) : releaseKnob(key.knobIndex)))) {
+      key.lastRing = tag;
+      key.ringAt = now;
+    }
+  }
+}
+
+let ringErrorLogged = false;
+function ring(fn) {
+  try {
+    fn();
+    ringErrorLogged = false;
+    return true;
+  } catch (err) {
+    if (!ringErrorLogged) log(`knob ring update failed: ${err.message}`);
+    ringErrorLogged = true;
+    return false;
+  }
+}
+
+function hexToRgb(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
 async function refresh() {
   if (refreshing) return;
   refreshing = true;
@@ -120,13 +211,14 @@ function paint(context) {
   const key = keys.get(context);
   if (!key) return;
   let image;
-  if (lastError) image = renderError(lastError);
+  if (key.action === LIMITS_ACTION) image = renderLimits(limits, { square: key.square, page: key.page });
+  else if (lastError) image = renderError(lastError);
   else if (key.action === SUMMARY_ACTION) image = renderSummary(agents, blink);
   else {
     const slot = slots[key.slotIndex];
     if (!slot) image = renderEmpty(key.slotIndex);
     else if (slot.kind === 'subagent') image = renderSubagent(slot, Date.now(), blink);
-    else image = renderAgent(slot, Date.now(), blink);
+    else image = renderAgent(slot, Date.now(), blink, mainTextFor(slot, agents, mainText));
   }
 
   if (image === key.lastImage) return;

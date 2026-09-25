@@ -2,6 +2,19 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org).
 
+## [v0.3.0](https://github.com/OneAtDrt/stream_dock_orca/releases/tag/v0.3.0) — AI Limits, main text setting, live status
+
+### Added
+* **AI Limits** action (knob or key): Claude and ChatGPT limits left, with the 5-hour session countdown, 5-hour / weekly bars and Claude's separate Fable weekly limit; read from Orca's own `rateLimits` (no Keychain, no extra API calls); knob ring = colour of the lowest provider
+* AI Limits pages: press cycles overview → Claude → ChatGPT; keys use their own full-size 144×144 layouts (big numbers, bigger rows when a provider has fewer windows)
+* **Main text** setting (Property Inspector, shared by all Orca Agent keys): Auto / Chat name / Repository; Auto shows the chat name when several agents share a repository
+
+* README previews: AI Limits pages and a chat-name key (`scripts/previews.js`)
+### Fixed
+* Agents whose Orca hook entries went stale showed as idle while working: a busy terminal title now wins, and a spinner → `✳` change seen by the plugin shows DONE for 30 min
+* Files: `plugin/limits.js` (new), `plugin/limits.test.js` (new), `plugin/knob-led.js` (new, shared), `plugin/knob-led.test.js` (new), `plugin/agents.js`, `plugin/render.js`, `plugin/index.js`, `plugin/agents.test.js`, `propertyInspector/` (new), `static/limits.svg` (new), `manifest.json`, `package.json` (node-hid), `install.sh`, `scripts/previews.js`, `docs/previews/*.png`, `README.md`; version 0.3.0 in `manifest.json`, `package.json`, `package-lock.json`
+* Tests: 22
+
 ## [v0.2.2](https://github.com/OneAtDrt/stream_dock_orca/releases/tag/v0.2.2) — README previews
 
 ### Added

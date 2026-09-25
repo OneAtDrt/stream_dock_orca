@@ -124,16 +124,43 @@ function leadIsBusy(terminal, hook) {
   return titleIsBusy(terminal);
 }
 
-function deriveStatus(terminal, hook, now, subagentCount = 0) {
+// Orca's hook entry can be stale: a session started before the hooks were installed (or one whose
+// hook events stopped arriving) keeps its last entry forever, e.g. a "Stop" from yesterday. The
+// terminal title is live, so a busy spinner there beats an old entry.
+const WAITING_TRUST_MS = 10 * 60 * 1000;
+const HOOK_STALE_MS = 30 * 60 * 1000;
+
+// stoppedAt: when this plugin saw the title go from busy to idle. That's our own "finished" signal
+// for sessions whose hook entries never arrive (Orca's bell case).
+function deriveStatus(terminal, hook, now, subagentCount = 0, stoppedAt = null) {
   const state = hook?.payload?.state;
-  if (state === 'blocked' || state === 'waiting' || state === 'permission') return 'waiting';
+  const busy = titleIsBusy(terminal);
+  const hookAge = now - (hook?.receivedAt || 0);
+  const justFinished = Boolean(stoppedAt && now - stoppedAt < DONE_FADE_MS);
+  if ((state === 'blocked' || state === 'waiting' || state === 'permission') && !(busy && hookAge > WAITING_TRUST_MS)) return 'waiting';
   if (subagentCount > 0) return leadIsBusy(terminal, hook) ? 'working' : 'subagents';
-  if (state === 'working') return 'working';
-  if (state === 'done') {
-    if (hook.hookEventName === 'SessionStart') return 'idle';
-    return now - (hook.stateStartedAt || hook.receivedAt || 0) < DONE_FADE_MS ? 'done' : 'idle';
+  if (busy) return 'working';
+  if (state === 'working' && hookAge < HOOK_STALE_MS) return 'working';
+  if (state === 'done' && hook.hookEventName !== 'SessionStart'
+    && now - (hook.stateStartedAt || hook.receivedAt || 0) < DONE_FADE_MS) return 'done';
+  return justFinished ? 'done' : 'idle';
+}
+
+// Title transitions per terminal handle, kept across refreshes: { busy, stoppedAt }.
+const titleWatch = new Map();
+
+function watchTitles(terminals, now = Date.now(), watch = titleWatch) {
+  const seen = new Set();
+  for (const t of terminals) {
+    seen.add(t.handle);
+    const busy = titleIsBusy(t);
+    const prev = watch.get(t.handle);
+    if (busy) watch.set(t.handle, { busy: true, stoppedAt: null });
+    else if (prev?.busy) watch.set(t.handle, { busy: false, stoppedAt: now });
+    else if (!prev) watch.set(t.handle, { busy: false, stoppedAt: null });
   }
-  return titleIsBusy(terminal) ? 'working' : 'idle';
+  for (const handle of watch.keys()) if (!seen.has(handle)) watch.delete(handle);
+  return watch;
 }
 
 function projectLabel(worktreePath) {
@@ -160,14 +187,17 @@ function taskLabel(terminal, hook) {
   return (hook?.payload?.prompt || '').replace(/\s+/g, ' ').trim();
 }
 
-function buildAgents(terminals, hookEntries, now = Date.now(), subagentMeta = {}) {
+function buildAgents(terminals, hookEntries, now = Date.now(), subagentMeta = {}, watch = new Map()) {
   const agents = [];
   for (const terminal of terminals) {
     if (!terminal.agentIdentity || terminal.orphaned || terminal.connected === false) continue;
     const hook = hookEntries[`${terminal.tabId}:${terminal.leafId}`];
     const subagents = activeSubagents(hook, now, subagentMeta);
-    const status = deriveStatus(terminal, hook, now, subagents.length);
+    const stoppedAt = watch.get(terminal.handle)?.stoppedAt || null;
+    const status = deriveStatus(terminal, hook, now, subagents.length, stoppedAt);
+    const hookDone = hook?.payload?.state === 'done' && now - (hook.stateStartedAt || 0) < DONE_FADE_MS;
     const since = (status === 'subagents' && subagents[0].startedAt)
+      || (status === 'done' && !hookDone && stoppedAt)
       || hook?.stateStartedAt || hook?.receivedAt || terminal.lastOutputAt || now;
     agents.push({
       handle: terminal.handle,
@@ -223,7 +253,8 @@ function flattenSlots(agents) {
 
 async function loadAgents() {
   const [terminals, hooks] = await Promise.all([listTerminals(), readHookStatus()]);
-  return buildAgents(terminals, hooks, Date.now(), await readSubagentMeta(hooks));
+  const now = Date.now();
+  return buildAgents(terminals, hooks, now, await readSubagentMeta(hooks), watchTitles(terminals, now));
 }
 
 function bringOrcaToFront() {
@@ -258,7 +289,7 @@ async function openSubagentView(slot) {
 }
 
 module.exports = {
-  loadAgents, buildAgents, flattenSlots, deriveStatus, activeSubagents, subagentMetaPath, subagentTranscriptPath, projectLabel, taskLabel,
+  loadAgents, buildAgents, flattenSlots, deriveStatus, watchTitles, activeSubagents, subagentMetaPath, subagentTranscriptPath, projectLabel, taskLabel,
   focusAgent, openSubagentView, viewerTitle, shellQuote,
   DONE_FADE_MS, SUBAGENT_STALE_MS
 };

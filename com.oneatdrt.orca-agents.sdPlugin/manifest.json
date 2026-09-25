@@ -4,25 +4,63 @@
       "Icon": "static/icon.svg",
       "Name": "Orca Agent",
       "DisableAutomaticStates": true,
-      "States": [{ "Image": "static/icon.svg", "TitleAlignment": "bottom", "FontSize": "10" }],
+      "States": [
+        {
+          "Image": "static/icon.svg",
+          "TitleAlignment": "bottom",
+          "FontSize": "10"
+        }
+      ],
       "Settings": {},
-      "Controllers": ["Keypad"],
+      "Controllers": [
+        "Keypad"
+      ],
       "UserTitleEnabled": false,
       "SupportedInMultiActions": false,
       "Tooltip": "Shows one Orca agent (project, task, status). Press to jump to its terminal.",
-      "UUID": "com.oneatdrt.orca-agents.slot"
+      "UUID": "com.oneatdrt.orca-agents.slot",
+      "PropertyInspectorPath": "propertyInspector/index.html"
     },
     {
       "Icon": "static/icon.svg",
       "Name": "Orca Summary",
       "DisableAutomaticStates": true,
-      "States": [{ "Image": "static/icon.svg", "TitleAlignment": "bottom", "FontSize": "10" }],
+      "States": [
+        {
+          "Image": "static/icon.svg",
+          "TitleAlignment": "bottom",
+          "FontSize": "10"
+        }
+      ],
       "Settings": {},
-      "Controllers": ["Keypad"],
+      "Controllers": [
+        "Keypad"
+      ],
       "UserTitleEnabled": false,
       "SupportedInMultiActions": false,
       "Tooltip": "Counts of working / waiting / done agents. Press to jump to the agent that needs you.",
       "UUID": "com.oneatdrt.orca-agents.summary"
+    },
+    {
+      "Icon": "static/limits.svg",
+      "Name": "AI Limits",
+      "DisableAutomaticStates": true,
+      "States": [
+        {
+          "Image": "static/limits.svg",
+          "TitleAlignment": "bottom",
+          "FontSize": "10"
+        }
+      ],
+      "Settings": {},
+      "Controllers": [
+        "Knob",
+        "Keypad"
+      ],
+      "UserTitleEnabled": false,
+      "SupportedInMultiActions": false,
+      "Tooltip": "Claude and ChatGPT limits left (5-hour, weekly, Fable), as Orca reads them. Press: overview → Claude → ChatGPT.",
+      "UUID": "com.oneatdrt.orca-agents.limits"
     }
   ],
   "SDKVersion": 1,
@@ -33,9 +71,18 @@
   "Description": "Live status of Orca AI agents (Claude Code, Codex, ...) on your Stream Dock keys.",
   "Category": "Orca Agents",
   "CategoryIcon": "static/icon.svg",
-  "Version": "0.2.2",
+  "Version": "0.3.0",
   "URL": "https://github.com/MiraboxSpace/StreamDock-Plugin-SDK",
-  "OS": [{ "Platform": "mac", "MinimumVersion": "10.11" }],
-  "Software": { "MinimumVersion": "3.10.191.0421" },
-  "Nodejs": { "Version": "20" }
+  "OS": [
+    {
+      "Platform": "mac",
+      "MinimumVersion": "10.11"
+    }
+  ],
+  "Software": {
+    "MinimumVersion": "3.10.191.0421"
+  },
+  "Nodejs": {
+    "Version": "20"
+  }
 }

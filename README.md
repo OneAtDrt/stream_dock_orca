@@ -8,11 +8,12 @@ A [Mirabox Stream Dock](https://mirabox.net) plugin that shows the live status o
 
 <img src="docs/previews/gallery.png" width="816" alt="A row of keys: an agent with two subagent keys, a waiting agent and the summary key">
 
-A row of keys: an agent whose subagents are still running, its two subagent keys, an agent waiting for you, and the **Orca Summary** key.
+A row of keys: an agent whose subagents are still running, its two subagent keys, an agent waiting for you, the **Orca Summary** key and **AI Limits**.
 
 <table>
 <tr><td align="center"><img src="docs/previews/agent-waiting.png" width="144" alt="WAITING: needs you"><br><sub>WAITING: needs you</sub></td><td align="center"><img src="docs/previews/agent-working.png" width="144" alt="WORKING"><br><sub>WORKING</sub></td><td align="center"><img src="docs/previews/agent-subagents.png" width="144" alt="SUBS ×2: own turn over, 2 subagents running"><br><sub>SUBS ×2: own turn over, 2 subagents running</sub></td><td align="center"><img src="docs/previews/subagent-1.png" width="144" alt="Subagent key 1/2"><br><sub>Subagent key 1/2</sub></td><td align="center"><img src="docs/previews/subagent-2.png" width="144" alt="Subagent key 2/2"><br><sub>Subagent key 2/2</sub></td></tr>
 <tr><td align="center"><img src="docs/previews/agent-done.png" width="144" alt="DONE (last 30 min)"><br><sub>DONE (last 30 min)</sub></td><td align="center"><img src="docs/previews/agent-idle.png" width="144" alt="IDLE"><br><sub>IDLE</sub></td><td align="center"><img src="docs/previews/summary.png" width="144" alt="Orca Summary"><br><sub>Orca Summary</sub></td><td align="center"><img src="docs/previews/empty.png" width="144" alt="Empty slot"><br><sub>Empty slot</sub></td></tr>
+<tr><td align="center"><img src="docs/previews/agent-chat-name.png" width="144" alt="Main text: chat name"><br><sub>Main text: chat name</sub></td><td align="center"><img src="docs/previews/limits-overview.png" width="144" alt="AI Limits: overview"><br><sub>AI Limits: overview</sub></td><td align="center"><img src="docs/previews/limits-claude.png" width="144" alt="AI Limits: Claude (press)"><br><sub>AI Limits: Claude (press)</sub></td><td align="center"><img src="docs/previews/limits-chatgpt.png" width="144" alt="AI Limits: ChatGPT (press)"><br><sub>AI Limits: ChatGPT (press)</sub></td></tr>
 </table>
 
 ## Actions
@@ -21,6 +22,7 @@ A row of keys: an agent whose subagents are still running, its two subagent keys
 |---|---|---|
 | **Orca Agent** | One agent: its status and how long it's been in it, agent type, project, task title, and a small badge with its number of running subagents. Or, on the keys right after it, one running subagent each: `↳ SUB i/n`, its age, type, description and the parent's project (dashed border) | Opens that agent's terminal in Orca. A subagent key opens a live view of that subagent (see below) |
 | **Orca Summary** | Total agents, plus how many are waiting, working or done | Jumps to the first agent that needs you (then done, then working) |
+| **AI Limits** | Claude and ChatGPT (Codex) limits left: big number = the tightest general window, ⏱ = time left in the 5-hour session window, thin bars for 5-hour, weekly and Claude's separate Fable weekly limit. Green over 50%, amber over 20%, red below | Cycles pages: overview (both, big numbers) → Claude in detail → ChatGPT in detail; also refreshes. On a knob, turning also pages, and the ring shows the colour of the provider with the least left |
 
 ### Status colours
 
@@ -33,6 +35,12 @@ A row of keys: an agent whose subagents are still running, its two subagent keys
 | **IDLE** | grey | Nothing happening |
 
 Agent keys fill in priority order: waiting, working (incl. SUBS), done, idle. Each agent's running subagents come right after it, oldest first, and disappear when they finish, so later keys shift. Each **Orca Agent** key gets a slot number when you first place it (1st key = slot 1, 2nd = slot 2, ...). The number is saved with the key.
+
+### Settings
+
+**Main text** (Orca Agent keys, shared by all of them): what the big text in the middle shows.
+- **Auto** (default): the chat name when several agents work in the same repository, otherwise the repository.
+- **Chat name** / **Repository**: always that one; the other name is shown small underneath.
 
 ## Requirements
 
@@ -75,6 +83,10 @@ Pressing a main agent key runs `orca terminal switch --terminal <handle>` and br
 **Subagent live view.** A Claude Code subagent runs inside its main agent's session and has no terminal of its own, and Orca has no way to open a subagent from outside. So pressing a subagent key opens an Orca terminal tab named `↳ <type> <id>` in the main agent's worktree (`orca terminal create --focus`). The tab runs `plugin/subagent-view.js`, which follows the subagent's transcript (`<session>/subagents/agent-<id>.jsonl`) live and shows its task (▶), what it says, each tool call (⚙) and a shortened result (↳). Pressing the key again switches to the same tab instead of opening another. The tab stays open after the subagent finishes; close it when done. If the view can't be opened, the key falls back to the main agent's terminal.
 
 Overrides (environment variables): `ORCA_BIN`, `ORCA_HOOK_STATUS_FILE`.
+
+**Stale hook entries.** Orca stops receiving hook events from some sessions (e.g. ones started before its hooks were set up), and their last entry can be a day old. The live terminal title wins over such entries: a spinner means working, and a title that goes from spinner to `✳` while the plugin runs shows **DONE** for 30 min. A "waiting" entry counts only while it's recent (under 10 min) if the title is spinning, and a "working" entry older than 30 min without a spinner counts as idle.
+
+**AI Limits.** The numbers are the ones Orca already fetched (`orca account list --json` → `rateLimits`), read once a minute. So the plugin needs no Keychain access and makes no calls to the rate-limited usage APIs itself. Fable comes from Orca's `fableWeekly`; it doesn't drive the big number, because other models still work when only the Fable quota is used up. The knob ring uses `knob-led.js`, shared with the Audio Control and Network plugins.
 
 ## Project structure
 

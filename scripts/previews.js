@@ -10,7 +10,7 @@ const os = require('os');
 const path = require('path');
 const { execFileSync, spawn } = require('child_process');
 const { buildAgents, flattenSlots } = require('../com.oneatdrt.orca-agents.sdPlugin/plugin/agents');
-const { renderAgent, renderSubagent, renderSummary, renderEmpty } = require('../com.oneatdrt.orca-agents.sdPlugin/plugin/render');
+const { renderAgent, renderSubagent, renderSummary, renderEmpty, renderLimits } = require('../com.oneatdrt.orca-agents.sdPlugin/plugin/render');
 
 const CHROME = process.env.CHROME_BIN || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const OUT = path.join(__dirname, '..', 'docs', 'previews');
@@ -82,6 +82,19 @@ const HOOKS = {
   't5:pane': hook('done', min(180))
 };
 
+// Made-up limits in the shape the plugin reads from Orca.
+const LIMITS = {
+  claude: { windows: [
+    { label: '5h', left: 62, resetAt: NOW + 134 * 60e3 },
+    { label: 'wk', left: 45, resetAt: NOW + (3 * 24 + 4) * 3600e3 },
+    { label: 'fable', left: 72, resetAt: NOW + (3 * 24 + 4) * 3600e3, model: true }
+  ] },
+  gpt: { windows: [
+    { label: '5h', left: 88, resetAt: NOW + 201 * 60e3 },
+    { label: 'wk', left: 18, resetAt: NOW + 2 * 86400e3 }
+  ] }
+};
+
 function previews() {
   const agents = buildAgents(TERMINALS, HOOKS, NOW);
   const slots = flattenSlots(agents);
@@ -96,14 +109,18 @@ function previews() {
     ['agent-done', renderAgent(byProject('docs-site'), NOW), 'DONE: finished in the last 30 min'],
     ['agent-idle', renderAgent(byProject('mobile-app'), NOW), 'IDLE'],
     ['summary', renderSummary(agents), 'Orca Summary'],
-    ['empty', renderEmpty(7), 'Empty slot']
+    ['empty', renderEmpty(7), 'Empty slot'],
+    ['agent-chat-name', renderAgent({ ...byProject('web-app'), task: 'Migrate billing to the new API' }, NOW, false, 'task'), 'Main text: chat name'],
+    ['limits-overview', renderLimits(LIMITS, { square: true, now: NOW, page: 0 }), 'AI Limits: overview'],
+    ['limits-claude', renderLimits(LIMITS, { square: true, now: NOW, page: 1 }), 'AI Limits: Claude'],
+    ['limits-chatgpt', renderLimits(LIMITS, { square: true, now: NOW, page: 2 }), 'AI Limits: ChatGPT']
   ];
   for (const [name, uri] of list) if (!uri) throw new Error(`no image for ${name}`);
   return list;
 }
 
 // A realistic row of keys: an agent with its two subagent keys, another agent, the summary.
-const GALLERY = ['agent-subagents', 'subagent-1', 'subagent-2', 'agent-waiting', 'summary'];
+const GALLERY = ['agent-subagents', 'subagent-1', 'subagent-2', 'agent-waiting', 'summary', 'limits-overview'];
 
 function checkPng(file, width, height) {
   const out = execFileSync('sips', ['-g', 'pixelWidth', '-g', 'pixelHeight', file], { encoding: 'utf8' });

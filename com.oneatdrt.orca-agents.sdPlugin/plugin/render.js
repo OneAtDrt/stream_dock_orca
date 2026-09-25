@@ -69,13 +69,35 @@ function subagentBadge(count, color) {
 <text x="130" y="55" ${FONT} font-size="11" font-weight="800" fill="#fff" text-anchor="end">${count > 9 ? '9+' : count}</text>`;
 }
 
-function renderAgent(agent, now = Date.now(), blink = false) {
+// What the big text in the middle of an agent key shows: the repository or the chat (task) name.
+// 'auto' shows the chat when several agents work in the same repository, where the repo name
+// alone can't tell them apart.
+function mainTextFor(agent, agents, mode = 'auto') {
+  if (!agent.task) return 'project';
+  if (mode === 'task' || mode === 'project') return mode;
+  return agents.filter((a) => a.project === agent.project).length > 1 ? 'task' : 'project';
+}
+
+// Big text block: [lines, fontSize, ys]. Short repo names get large type; chat names wrap to 3 lines.
+function mainBlock(text, kind) {
+  if (kind === 'task') {
+    const lines = wrap(text, 13, 3);
+    if (lines.length === 1) return [lines, 20, [88]];
+    if (lines.length === 2) return [lines, 18, [79, 99]];
+    // Three lines use smaller type; wrap a bit narrower so long (e.g. Cyrillic) words fit the key.
+    return [wrap(text, 12, 3), 16, [72, 90, 108]];
+  }
+  const lines = wrap(text, 11, 2);
+  return [lines, lines.length > 1 ? 20 : lines[0].length > 9 ? 21 : 25, lines.length > 1 ? [74, 94] : [80]];
+}
+
+function renderAgent(agent, now = Date.now(), blink = false, main = 'project') {
   const style = STATUS_STYLE[agent.status] || STATUS_STYLE.idle;
-  const project = wrap(agent.project, 11, 2);
-  const task = wrap(agent.task, 17, 2);
-  const projectSize = project.length > 1 ? 20 : project[0].length > 9 ? 21 : 25;
-  const projectY = project.length > 1 ? [74, 94] : [80];
-  const taskY = [115, 131];
+  const byTask = main === 'task' && agent.task;
+  const [project, projectSize, projectY] = mainBlock(byTask ? agent.task : agent.project, byTask ? 'task' : 'project');
+  // The other name in small type underneath: the task (2 lines) or, with a chat on top, the repo.
+  const task = byTask ? wrap(agent.project, 17, 1) : wrap(agent.task, 17, 2);
+  const taskY = byTask ? [131] : [115, 131];
   const agentName = (agent.agent || '').toUpperCase().slice(0, 7);
   const busy = agent.status === 'working' || agent.status === 'subagents';
   const dotOpacity = busy && blink ? 0.35 : 1;
@@ -157,4 +179,150 @@ ${rows.map(([status, n], i) => {
   return toDataUri(svgFrame(body, border));
 }
 
-module.exports = { renderAgent, renderSubagent, renderEmpty, renderError, renderSummary, formatAge, wrap };
+// ---- AI Limits (approved design): Claude + ChatGPT rows on a 176×112 knob panel / 144×144 key ----
+
+const LIM = { bg: '#0b1120', on: '#f8fafc', dim: '#64748b', sub: '#94a3b8', green: '#22c55e', amber: '#f59e0b', red: '#ef4444', track: '#1e293b' };
+
+function limText(x, y, s, size, fill, weight = 700, anchor = 'start') {
+  return `<text x="${x}" y="${y}" ${FONT} font-size="${size}" font-weight="${weight}" fill="${fill}" text-anchor="${anchor}">${escapeXml(s)}</text>`;
+}
+
+// Own simple badges in the services' brand colours (not the official logos).
+function claudeBadge(x, y, s = 30) {
+  const cx = x + s / 2;
+  const cy = y + s / 2;
+  const rays = Array.from({ length: 8 }, (_, i) => {
+    const a = (i * Math.PI) / 4;
+    return `<line x1="${(cx + Math.cos(a) * s * 0.12).toFixed(1)}" y1="${(cy + Math.sin(a) * s * 0.12).toFixed(1)}" x2="${(cx + Math.cos(a) * s * 0.36).toFixed(1)}" y2="${(cy + Math.sin(a) * s * 0.36).toFixed(1)}" stroke="#fff" stroke-width="${s * 0.1}" stroke-linecap="round"/>`;
+  }).join('');
+  return `<rect x="${x}" y="${y}" width="${s}" height="${s}" rx="${s * 0.24}" fill="#d97757"/>${rays}`;
+}
+
+function gptBadge(x, y, s = 30) {
+  const cx = x + s / 2;
+  const cy = y + s / 2;
+  const petals = Array.from({ length: 6 }, (_, i) => `<ellipse cx="${cx}" cy="${cy - s * 0.14}" rx="${s * 0.1}" ry="${s * 0.22}" fill="none" stroke="#0b1120" stroke-width="${s * 0.075}" transform="rotate(${i * 60} ${cx} ${cy})"/>`).join('');
+  return `<rect x="${x}" y="${y}" width="${s}" height="${s}" rx="${s * 0.24}" fill="#f8fafc"/>${petals}`;
+}
+
+const leftColor = (v) => (v == null ? LIM.dim : v > 50 ? LIM.green : v > 20 ? LIM.amber : LIM.red);
+
+function formatReset(ms) {
+  if (ms == null) return '';
+  const min = Math.max(0, Math.round(ms / 60000));
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60);
+  return h < 24 ? `${h}h ${min % 60}m` : `${Math.floor(h / 24)}d ${h % 24}h`;
+}
+
+function stopwatch(x, y, color) {
+  return `<circle cx="${x + 5}" cy="${y + 6}" r="4.2" fill="none" stroke="${color}" stroke-width="1.4"/><line x1="${x + 5}" y1="${y + 6}" x2="${x + 5}" y2="${y + 3.4}" stroke="${color}" stroke-width="1.4" stroke-linecap="round"/><line x1="${x + 3.6}" y1="${y}" x2="${x + 6.4}" y2="${y}" stroke="${color}" stroke-width="1.4" stroke-linecap="round"/>`;
+}
+
+// One provider row: badge, big "% left" of the tightest general window, top right the time left in
+// the 5-hour session window (grey weekly reset when there is none), one thin bar per window.
+function limitsRow(y, badge, name, p, now) {
+  if (!p) return `${badge}${limText(46, y + 13, name, 11, LIM.sub, 800)}${limText(46, y + 32, 'no data', 15, LIM.dim, 800)}`;
+  const general = p.windows.filter((w) => !w.model);
+  const tight = (general.length ? general : p.windows).reduce((a, b) => (b.left < a.left ? b : a));
+  const session = p.windows.find((w) => w.label === '5h') || general[0] || p.windows[0];
+  const sessionText = formatReset(session.resetAt == null ? null : session.resetAt - now);
+  const sessionColor = session.label === '5h' ? LIM.on : LIM.dim;
+  const step = p.windows.length > 2 ? 10 : 11;
+  const bars = p.windows.map((w, i) => {
+    const by = y + 19 + i * step;
+    const right = w.model ? `${w.left}%` : w === session ? '' : formatReset(w.resetAt == null ? null : w.resetAt - now);
+    return `${limText(104, by + 6, w.label, 8, w.model ? LIM.sub : LIM.dim, 700, 'end')}<rect x="107" y="${by}" width="30" height="5" rx="2.5" fill="${LIM.track}"/><rect x="107" y="${by}" width="${Math.max(2, (w.left / 100) * 30).toFixed(1)}" height="5" rx="2.5" fill="${leftColor(w.left)}"/>${limText(166, by + 6, right, 8, w.model ? leftColor(w.left) : LIM.sub, 800, 'end')}`;
+  }).join('');
+  return `${badge}
+${limText(46, y + 13, name, 11, LIM.sub, 800)}
+${sessionText ? stopwatch(166 - sessionText.length * 6.4 - 14, y + 3, sessionColor) + limText(166, y + 13, sessionText, 11, sessionColor, 800, 'end') : ''}
+${limText(46, y + 35, `${tight.left}%`, 22, leftColor(tight.left), 800)}
+${bars}`;
+}
+
+const LIMIT_PAGES = ['overview', 'claude', 'gpt'];
+const PROVIDERS = { claude: { name: 'CLAUDE', badge: claudeBadge }, gpt: { name: 'CHATGPT', badge: gptBadge } };
+const WINDOW_NAMES = { '5h': '5-hour', wk: 'Week', fable: 'Fable' };
+
+function limitDots(page, cx, y) {
+  return LIMIT_PAGES.map((_, i) => `<circle cx="${cx + (i - 1) * 9}" cy="${y}" r="2.6" fill="${i === page ? LIM.on : LIM.dim}"/>`).join('');
+}
+
+// Time left in the 5-hour session window (else the first general window's reset), for a provider.
+function sessionInfo(p, now) {
+  const general = p.windows.filter((w) => !w.model);
+  const session = p.windows.find((w) => w.label === '5h') || general[0] || p.windows[0];
+  return { text: formatReset(session.resetAt == null ? null : session.resetAt - now), isSession: session.label === '5h' };
+}
+
+// ---- 144×144 key layouts (use the whole key; big type) ----
+
+function keyOverviewHalf(y, key, p, now) {
+  const { name, badge } = PROVIDERS[key];
+  if (!p) return `${badge(10, y + 10, 30)}${limText(48, y + 26, name, 11, LIM.sub, 800)}${limText(48, y + 48, 'no data', 16, LIM.dim, 800)}`;
+  const tight = (p.windows.filter((w) => !w.model).length ? p.windows.filter((w) => !w.model) : p.windows).reduce((a, b) => (b.left < a.left ? b : a));
+  const ses = sessionInfo(p, now);
+  const color = ses.isSession ? LIM.on : LIM.dim;
+  return `${badge(10, y + 8, 30)}
+${limText(134, y + 38, `${tight.left}%`, 34, leftColor(tight.left), 800, 'end')}
+${ses.text ? stopwatch(10, y + 48, color) + limText(24, y + 59, ses.text, 13, color, 800) : ''}
+<rect x="${ses.text ? 84 : 10}" y="${y + 51}" width="${ses.text ? 50 : 124}" height="6" rx="3" fill="${LIM.track}"/><rect x="${ses.text ? 84 : 10}" y="${y + 51}" width="${Math.max(3, (tight.left / 100) * (ses.text ? 50 : 124)).toFixed(1)}" height="6" rx="3" fill="${leftColor(tight.left)}"/>`;
+}
+
+function keyDetail(key, p, now) {
+  const { name, badge } = PROVIDERS[key];
+  const head = `${badge(10, 8, 24)}${limText(40, 26, name, 13, LIM.on, 800)}`;
+  if (!p) return `${head}${limText(72, 84, 'no data', 18, LIM.dim, 800, 'middle')}`;
+  const rows = p.windows.slice(0, 3);
+  // Fewer windows -> taller rows and bigger numbers, so the key is always filled.
+  const [h, size] = rows.length === 1 ? [88, 40] : rows.length === 2 ? [46, 28] : [31, 22];
+  return head + rows.map((w, i) => {
+    const y = 38 + i * h;
+    const reset = formatReset(w.resetAt == null ? null : w.resetAt - now);
+    const barY = y + h - 12;
+    return `${limText(10, y + 15, WINDOW_NAMES[w.label] || w.label, 13, w.model ? LIM.sub : LIM.on, 800)}
+${limText(134, barY - 4, `${w.left}%`, size, leftColor(w.left), 800, 'end')}
+<rect x="10" y="${barY}" width="${reset ? 70 : 124}" height="5" rx="2.5" fill="${LIM.track}"/><rect x="10" y="${barY}" width="${Math.max(2, (w.left / 100) * (reset ? 70 : 124)).toFixed(1)}" height="5" rx="2.5" fill="${leftColor(w.left)}"/>
+${reset ? limText(134, barY + 6, `↻ ${reset}`, 10, LIM.sub, 700, 'end') : ''}`;
+  }).join('');
+}
+
+// ---- 176×112 knob panel: overview (two rows) or one provider in detail ----
+
+function panelDetail(key, p, now) {
+  const { name, badge } = PROVIDERS[key];
+  const head = `${badge(8, 6, 20)}${limText(34, 21, name, 12, LIM.on, 800)}`;
+  if (!p) return `${head}${limText(88, 70, 'no data', 18, LIM.dim, 800, 'middle')}`;
+  const rows = p.windows.slice(0, 3);
+  const [h, size] = rows.length === 1 ? [70, 32] : rows.length === 2 ? [38, 22] : [26, 17];
+  return head + rows.map((w, i) => {
+    const y = 34 + i * h;
+    const reset = formatReset(w.resetAt == null ? null : w.resetAt - now);
+    const mid = y + Math.min(h, 26) / 2 + 2;
+    return `${limText(8, mid + 4, WINDOW_NAMES[w.label] || w.label, 12, w.model ? LIM.sub : LIM.on, 800)}
+<rect x="56" y="${mid - 3}" width="40" height="6" rx="3" fill="${LIM.track}"/><rect x="56" y="${mid - 3}" width="${Math.max(2, (w.left / 100) * 40).toFixed(1)}" height="6" rx="3" fill="${leftColor(w.left)}"/>
+${limText(134, mid + size * 0.36, `${w.left}%`, size, leftColor(w.left), 800, 'end')}
+${reset ? limText(172, mid + 4, reset.replace(/ /g, ''), 9, LIM.sub, 700, 'end') : ''}`;
+  }).join('');
+}
+
+// page: 0 = overview, 1 = Claude, 2 = ChatGPT (press cycles).
+function renderLimits(model, { square = false, now = Date.now(), page = 0 } = {}) {
+  const which = LIMIT_PAGES[page] || 'overview';
+  let body;
+  if (square) {
+    body = which === 'overview'
+      ? `${keyOverviewHalf(0, 'claude', model?.claude, now)}<line x1="10" y1="66.5" x2="134" y2="66.5" stroke="${LIM.track}"/>${keyOverviewHalf(66, 'gpt', model?.gpt, now)}${limitDots(0, 72, 139)}`
+      : `${keyDetail(which, model?.[which], now)}${limitDots(page, 72, 139)}`;
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144"><rect width="144" height="144" fill="${LIM.bg}"/>${body}</svg>`;
+    return `data:image/svg+xml;charset=utf8,${encodeURIComponent(svg)}`;
+  }
+  body = which === 'overview'
+    ? `${limitsRow(6, claudeBadge(8, 8), 'CLAUDE', model?.claude, now)}<line x1="8" y1="56.5" x2="168" y2="56.5" stroke="${LIM.track}"/>${limitsRow(60, gptBadge(8, 62), 'CHATGPT', model?.gpt, now)}`
+    : `${panelDetail(which, model?.[which], now)}${limitDots(page, 154, 14)}`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="176" height="112" viewBox="0 0 176 112"><rect width="176" height="112" fill="${LIM.bg}"/>${body}</svg>`;
+  return `data:image/svg+xml;charset=utf8,${encodeURIComponent(svg)}`;
+}
+
+module.exports = { mainTextFor, renderLimits, LIMIT_PAGES, leftColor, renderAgent, renderSubagent, renderEmpty, renderError, renderSummary, formatAge, wrap };

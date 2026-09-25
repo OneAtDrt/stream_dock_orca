@@ -1,12 +1,13 @@
 {
   "name": "orca-agents-streamdock",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "main": "index.js",
   "scripts": {
     "test": "node --test"
   },
   "dependencies": {
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "node-hid": "^3.4.0"
   }
 }

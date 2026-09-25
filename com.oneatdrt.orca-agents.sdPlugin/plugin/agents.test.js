@@ -219,3 +219,61 @@ test('subagent viewer formats tasks, text, tool calls and results', () => {
     [{ kind: 'result', text: 'a b' }]);
   assert.deepEqual(formatEntry({ type: 'system' }), []);
 });
+
+test('a live busy title beats a stale hook entry; idle agents sort after active ones', () => {
+  const NOW = 1_800_000_000_000;
+  const term = (o) => ({ handle: 'h', tabId: 't', leafId: 'l', agentIdentity: 'claude', connected: true, worktreePath: '/w/my-api', lastOutputAt: NOW, ...o });
+  const staleStop = { hookEventName: 'Stop', payload: { state: 'done' }, receivedAt: NOW - 22 * 3600e3, stateStartedAt: NOW - 22 * 3600e3 };
+  // Session whose hooks stopped arriving yesterday, but the terminal is spinning now.
+  assert.equal(deriveStatus(term({ title: '◑ Migrate clients' }), staleStop, NOW), 'working');
+  assert.equal(deriveStatus(term({ title: '✳ Migrate clients' }), staleStop, NOW), 'idle');
+  // A stale "working" entry with an idle title is not working forever.
+  const staleWork = { hookEventName: 'PreToolUse', payload: { state: 'working' }, receivedAt: NOW - 3600e3 };
+  assert.equal(deriveStatus(term({ title: '✳ Old task' }), staleWork, NOW), 'idle');
+  assert.equal(deriveStatus(term({ title: '✳ Old task' }), { ...staleWork, receivedAt: NOW - 60e3 }, NOW), 'working');
+  // Waiting still wins while recent; an old waiting entry loses to a spinner.
+  const wait = { hookEventName: 'Notification', payload: { state: 'permission' }, receivedAt: NOW - 60e3 };
+  assert.equal(deriveStatus(term({ title: '◑ Task' }), wait, NOW), 'waiting');
+  assert.equal(deriveStatus(term({ title: '◑ Task' }), { ...wait, receivedAt: NOW - 3600e3 }, NOW), 'working');
+  // Ordering: active first, idle last.
+  const hooks = { 'a:l': staleStop, 'b:l': staleStop };
+  const agents = buildAgents([term({ handle: 'idle', tabId: 'a', title: '✳ Idle one' }), term({ handle: 'busy', tabId: 'b', title: '◑ Busy one' })], hooks, NOW);
+  assert.deepEqual(agents.map((a) => `${a.handle}:${a.status}`), ['busy:working', 'idle:idle']);
+});
+
+test('a session seen working and now idle shows DONE even without hook updates', () => {
+  const { watchTitles } = require('./agents');
+  const NOW = 1_800_000_000_000;
+  const staleStop = { hookEventName: 'Stop', payload: { state: 'done' }, receivedAt: NOW - 50 * 3600e3, stateStartedAt: NOW - 50 * 3600e3 };
+  const t = (title) => ({ handle: 'h1', tabId: 't', leafId: 'l', agentIdentity: 'claude', connected: true, worktreePath: '/w/my-api', lastOutputAt: NOW, title });
+  const watch = new Map();
+  watchTitles([t('✳ Task')], NOW - 60e3, watch); // first seen idle: no transition
+  assert.equal(buildAgents([t('✳ Task')], { 't:l': staleStop }, NOW, {}, watch)[0].status, 'idle');
+  watchTitles([t('◑ Task')], NOW - 30e3, watch); // working
+  assert.equal(buildAgents([t('◑ Task')], { 't:l': staleStop }, NOW - 30e3, {}, watch)[0].status, 'working');
+  watchTitles([t('✳ Task')], NOW - 10e3, watch); // finished
+  const [done] = buildAgents([t('✳ Task')], { 't:l': staleStop }, NOW, {}, watch);
+  assert.equal(done.status, 'done');
+  assert.equal(done.since, NOW - 10e3);
+  // Fades to idle after 30 min; a closed terminal is forgotten.
+  assert.equal(buildAgents([t('✳ Task')], { 't:l': staleStop }, NOW + 31 * 60e3, {}, watch)[0].status, 'idle');
+  watchTitles([], NOW, watch);
+  assert.equal(watch.size, 0);
+});
+
+test('main text: auto shows the chat when a repo has several agents', () => {
+  const { mainTextFor, renderAgent } = require('./render');
+  const a = { project: 'my-api', task: 'Migrate clients to production' };
+  const b = { project: 'my-api', task: 'Compare dev to production' };
+  const c = { project: 'docs-site', task: 'Fix typos' };
+  const all = [a, b, c];
+  assert.equal(mainTextFor(a, all, 'auto'), 'task');
+  assert.equal(mainTextFor(c, all, 'auto'), 'project');
+  assert.equal(mainTextFor(c, all, 'task'), 'task');
+  assert.equal(mainTextFor(a, all, 'project'), 'project');
+  assert.equal(mainTextFor({ project: 'x', task: '' }, all, 'task'), 'project'); // no chat name to show
+  const svg = decodeURIComponent(renderAgent({ ...a, agent: 'claude', status: 'working', since: 0, subagents: [] }, 0, false, 'task'));
+  assert.match(svg, />Migrate</);
+  assert.match(svg, />clients to</);
+  assert.match(svg, />my-api</); // repo moves to the small line
+});

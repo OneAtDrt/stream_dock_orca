@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const WebSocket = require('ws');
-const { loadAgents, flattenSlots, focusAgent } = require('./agents');
+const { loadAgents, flattenSlots, focusAgent, openSubagentView } = require('./agents');
 const { renderAgent, renderSubagent, renderEmpty, renderError, renderSummary } = require('./render');
 
 const SLOT_ACTION = 'com.oneatdrt.orca-agents.slot';
@@ -84,6 +84,15 @@ async function onPress(context) {
   if (!target) {
     send({ event: 'showAlert', context });
     return;
+  }
+  if (target.kind === 'subagent') {
+    try {
+      await openSubagentView(target);
+      log(`opened subagent view ${target.id} (${target.parentProject})`);
+      return;
+    } catch (err) {
+      log(`subagent view failed, opening parent: ${err.message}`);
+    }
   }
   await focusAgent(target.handle);
   log(`focused ${target.handle} (${target.project || target.parentProject})`);

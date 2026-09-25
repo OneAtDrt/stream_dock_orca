@@ -185,3 +185,37 @@ test('subagent key and parent badge render', () => {
   assert.match(svg, /stroke-dasharray/);
   assert.match(decodeURIComponent(renderSubagent({ ...slot, description: '', agentType: '' }, NOW)), />subagent</);
 });
+
+const { subagentTranscriptPath, viewerTitle, shellQuote } = require('./agents');
+const { formatEntry } = require('./subagent-view');
+
+test('subagent slots carry their transcript for the live view', () => {
+  const session = '/tmp/p/abc.jsonl';
+  assert.equal(subagentTranscriptPath(session, 'a1b2'), '/tmp/p/abc/subagents/agent-a1b2.jsonl');
+  assert.equal(subagentTranscriptPath(session, '../x'), null);
+  assert.equal(subagentTranscriptPath(null, 'a1b2'), null);
+  const [parent, sub] = flattenSlots([{
+    handle: 'term_1', project: 'my-api', worktreePath: '/w/my-api', transcriptPath: session, status: 'subagents', since: 1,
+    subagents: [{ id: 'a1b2c3d4', agentType: 'explorer', description: 'Find usages', state: 'working', startedAt: 1 }]
+  }]);
+  assert.equal(parent.kind, 'agent');
+  assert.equal(sub.transcript, '/tmp/p/abc/subagents/agent-a1b2c3d4.jsonl');
+  assert.equal(sub.worktreePath, '/w/my-api');
+  assert.equal(sub.handle, 'term_1'); // fallback: the parent's terminal
+  assert.equal(viewerTitle(sub), '↳ explorer b2c3d4');
+});
+
+test('shellQuote survives quotes and spaces', () => {
+  assert.equal(shellQuote("/Apps/Stream Dock/it's.js"), "'/Apps/Stream Dock/it'\\''s.js'");
+});
+
+test('subagent viewer formats tasks, text, tool calls and results', () => {
+  assert.deepEqual(formatEntry({ type: 'user', message: { content: 'Research   sites' } }), [{ kind: 'task', text: 'Research sites' }]);
+  assert.deepEqual(formatEntry({ type: 'assistant', message: { content: [
+    { type: 'text', text: 'Checking the table.' },
+    { type: 'tool_use', name: 'Bash', input: { command: 'ls -la', description: 'List files' } }
+  ] } }), [{ kind: 'say', text: 'Checking the table.' }, { kind: 'tool', text: 'Bash List files' }]);
+  assert.deepEqual(formatEntry({ type: 'user', message: { content: [{ type: 'tool_result', content: [{ type: 'text', text: 'a\nb' }] }] } }),
+    [{ kind: 'result', text: 'a b' }]);
+  assert.deepEqual(formatEntry({ type: 'system' }), []);
+});

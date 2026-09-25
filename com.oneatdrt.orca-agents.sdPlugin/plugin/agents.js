@@ -81,9 +81,18 @@ async function readHookStatus() {
 
 // Claude Code keeps each subagent's metadata (incl. the Task description) next to the session transcript:
 // <session>.jsonl -> <session>/subagents/agent-<id>.meta.json
+// Claude Code keeps a subagent's files next to the parent session: <session>/subagents/agent-<id>.*
+function subagentFile(transcriptPath, id, ext) {
+  if (!transcriptPath || !/\.jsonl$/.test(transcriptPath) || !/^[\w.-]+$/.test(String(id || ''))) return null;
+  return path.join(transcriptPath.replace(/\.jsonl$/, ''), 'subagents', `agent-${id}${ext}`);
+}
+
+function subagentTranscriptPath(transcriptPath, id) {
+  return subagentFile(transcriptPath, id, '.jsonl');
+}
+
 function subagentMetaPath(transcriptPath, id) {
-  if (!transcriptPath || !/\.jsonl$/.test(transcriptPath) || !/^[\w.-]+$/.test(id)) return null;
-  return path.join(transcriptPath.replace(/\.jsonl$/, ''), 'subagents', `agent-${id}.meta.json`);
+  return subagentFile(transcriptPath, id, '.meta.json');
 }
 
 // Running subagents from Orca's roster (payload.subagents), oldest first.
@@ -163,6 +172,8 @@ function buildAgents(terminals, hookEntries, now = Date.now(), subagentMeta = {}
     agents.push({
       handle: terminal.handle,
       agent: terminal.agentIdentity,
+      worktreePath: terminal.worktreePath,
+      transcriptPath: hook?.providerSession?.transcriptPath || null,
       project: projectLabel(terminal.worktreePath),
       workspace: workspaceLabel(terminal.worktreePath),
       task: taskLabel(terminal, hook),
@@ -184,7 +195,8 @@ function buildAgents(terminals, hookEntries, now = Date.now(), subagentMeta = {}
 }
 
 // Slot order for agent keys: each main agent followed by its running subagents (oldest first).
-// Subagent slots carry the parent's handle, so pressing one opens the parent's terminal.
+// Subagent slots carry their live transcript (pressing one opens a viewer for it) and the parent's
+// handle as a fallback.
 function flattenSlots(agents) {
   const slots = [];
   for (const agent of agents) {
@@ -199,6 +211,8 @@ function flattenSlots(agents) {
         id: sub.id,
         agentType: sub.agentType,
         description: sub.description,
+        transcript: subagentTranscriptPath(agent.transcriptPath, sub.id),
+        worktreePath: agent.worktreePath,
         status: sub.state === 'working' ? 'working' : 'waiting',
         since: sub.startedAt || agent.since
       });
@@ -212,12 +226,39 @@ async function loadAgents() {
   return buildAgents(terminals, hooks, Date.now(), await readSubagentMeta(hooks));
 }
 
+function bringOrcaToFront() {
+  return new Promise((resolve) => execFile('/usr/bin/open', ['-a', 'Orca'], () => resolve()));
+}
+
 async function focusAgent(handle) {
   await runOrca(['terminal', 'switch', '--terminal', handle, '--json']);
-  await new Promise((resolve) => execFile('/usr/bin/open', ['-a', 'Orca'], () => resolve()));
+  await bringOrcaToFront();
+}
+
+const VIEWER = path.join(__dirname, 'subagent-view.js');
+
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'\\''`)}'`;
+}
+
+function viewerTitle(slot) {
+  return `↳ ${slot.agentType || 'subagent'} ${String(slot.id).slice(-6)}`;
+}
+
+// Subagents have no terminal of their own (they run inside the parent's session), so pressing a
+// subagent key opens a terminal tab that follows its transcript live — reusing it if still open.
+async function openSubagentView(slot) {
+  if (!slot.transcript || !slot.worktreePath) throw new Error('no transcript for this subagent');
+  const title = viewerTitle(slot);
+  const existing = (await listTerminals()).find((t) => t.title === title && t.connected !== false && !t.orphaned);
+  if (existing) return focusAgent(existing.handle);
+  const command = [process.execPath, VIEWER, slot.transcript, title].map(shellQuote).join(' ');
+  await runOrca(['terminal', 'create', '--worktree', `path:${slot.worktreePath}`, '--title', title, '--command', command, '--focus', '--json'], 10000);
+  await bringOrcaToFront();
 }
 
 module.exports = {
-  loadAgents, buildAgents, flattenSlots, deriveStatus, activeSubagents, subagentMetaPath, projectLabel, taskLabel, focusAgent,
+  loadAgents, buildAgents, flattenSlots, deriveStatus, activeSubagents, subagentMetaPath, subagentTranscriptPath, projectLabel, taskLabel,
+  focusAgent, openSubagentView, viewerTitle, shellQuote,
   DONE_FADE_MS, SUBAGENT_STALE_MS
 };

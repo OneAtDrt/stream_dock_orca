@@ -8,7 +8,7 @@ A [Mirabox Stream Dock](https://mirabox.net) plugin that shows the live status o
 
 | Action | Shows | Press |
 |---|---|---|
-| **Orca Agent** | One agent: its status and how long it's been in it, agent type, project, task title, and a small badge with its number of running subagents. Or, on the keys right after it, one running subagent each: `↳ SUB i/n`, its age, type, description and the parent's project (dashed border) | Opens that agent's terminal in Orca (a subagent key opens its parent's terminal) |
+| **Orca Agent** | One agent: its status and how long it's been in it, agent type, project, task title, and a small badge with its number of running subagents. Or, on the keys right after it, one running subagent each: `↳ SUB i/n`, its age, type, description and the parent's project (dashed border) | Opens that agent's terminal in Orca. A subagent key opens a live view of that subagent (see below) |
 | **Orca Summary** | Total agents, plus how many are waiting, working or done | Jumps to the first agent that needs you (then done, then working) |
 
 ### Status colours
@@ -59,7 +59,9 @@ If a pane has no hook entry, the plugin uses the first character of the Claude C
 
 **Subagents.** Orca keeps a roster of each pane's subagents (e.g. Claude Code `Agent`/`Task` subagents) and writes it into the hook entry as `payload.subagents` (`id`, `state`, `startedAt`, `agentType`, sometimes `description`). The plugin shows each entry in state `working`, `blocked` or `waiting` on its own key (`blocked`/`waiting` render as WAITING), and ignores the roster if the entry is older than 30 min (subagent tool calls refresh the parent's entry, so a live subagent keeps it fresh). When Orca gives no description, the plugin reads it from the small `<session>/subagents/agent-<id>.meta.json` file Claude Code writes next to the session transcript (`providerSession.transcriptPath`), cached per file. It never parses the transcript itself. With running subagents, an agent shows WAITING if it needs you, WORKING if it is busy itself, and SUBS otherwise. Orca reports the pane as `working` while any subagent runs, and subagent tool calls update the parent's entry, so "busy itself" means the latest entry is the main agent's own `UserPromptSubmit` / `PreToolUse` / `PostToolUse` (no `toolAgentId`) or the terminal title shows a spinner. The **Orca Summary** key counts main agents only, with SUBS under WORKING.
 
-Pressing a key runs `orca terminal switch --terminal <handle>` and brings Orca to the front. The plugin never reads Orca's auth token.
+Pressing a main agent key runs `orca terminal switch --terminal <handle>` and brings Orca to the front. The plugin never reads Orca's auth token.
+
+**Subagent live view.** A Claude Code subagent runs inside its main agent's session and has no terminal of its own, and Orca has no way to open a subagent from outside. So pressing a subagent key opens an Orca terminal tab named `↳ <type> <id>` in the main agent's worktree (`orca terminal create --focus`). The tab runs `plugin/subagent-view.js`, which follows the subagent's transcript (`<session>/subagents/agent-<id>.jsonl`) live and shows its task (▶), what it says, each tool call (⚙) and a shortened result (↳). Pressing the key again switches to the same tab instead of opening another. The tab stays open after the subagent finishes; close it when done. If the view can't be opened, the key falls back to the main agent's terminal.
 
 Overrides (environment variables): `ORCA_BIN`, `ORCA_HOOK_STATUS_FILE`.
 
@@ -71,6 +73,7 @@ Overrides (environment variables): `ORCA_BIN`, `ORCA_HOOK_STATUS_FILE`.
 | `plugin/index.js` | Stream Dock WebSocket wiring, key slots, refresh loop |
 | `plugin/agents.js` | Orca data loading, status logic, sorting, switching to a terminal |
 | `plugin/render.js` | 144×144 SVG key images |
+| `plugin/subagent-view.js` | Live, readable view of one subagent's transcript, run in an Orca terminal |
 | `plugin/agents.test.js` | Unit tests |
 | `install.sh` | Installs the plugin into Stream Dock and restarts it |
 

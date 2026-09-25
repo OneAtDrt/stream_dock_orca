@@ -2,6 +2,13 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org).
 
+## [v0.2.1](https://github.com/OneAtDrt/stream_deck_orca/releases/tag/v0.2.1) — Subagent live view
+
+### Fixed
+* Pressing a subagent key opened the main agent's terminal instead of the subagent. It now opens (or re-focuses) an Orca terminal tab `↳ <type> <id>` that follows the subagent's transcript live: task, messages, tool calls and shortened results. It falls back to the main agent's terminal if the view can't be opened
+* Files: `plugin/subagent-view.js` (new), `plugin/agents.js`, `plugin/index.js`, `plugin/agents.test.js`, `README.md`, version 0.2.1 in `manifest.json`, `package.json`, `package-lock.json`
+* Tests: 14 (added: subagent transcript paths, shell quoting, transcript formatting)
+
 ## [v0.2.0](https://github.com/OneAtDrt/stream_deck_orca/releases/tag/v0.2.0) — Subagent keys
 
 * **Subagents on their own keys:** every running subagent gets its own **Orca Agent** key, placed right after its main agent (main A, A's subagents, main B, ...). Subagent keys show `↳ SUB i/n`, age, subagent type, description (up to 3 lines) and the parent's project, with a dashed border and darker fill; pressing one opens the parent's terminal ([bdb1bdf](https://github.com/OneAtDrt/stream_deck_orca/commit/bdb1bdf89be2fca27dc2b96198d6093f1462ebb2))

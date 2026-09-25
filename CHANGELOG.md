@@ -2,6 +2,12 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org).
 
+## [v0.3.1](https://github.com/OneAtDrt/stream_dock_orca/releases/tag/v0.3.1) — Single-limit layout
+
+### Changed
+* AI Limits: a provider with a single limit window (e.g. ChatGPT with only a weekly limit) gets a centred layout on its detail page (big number, thick full-width bar, reset time) instead of one small row in a mostly empty key
+* Files: `plugin/render.js`, `CHANGELOG.md`; version 0.3.1 in `manifest.json`, `package.json`, `package-lock.json`
+
 ## [v0.3.0](https://github.com/OneAtDrt/stream_dock_orca/releases/tag/v0.3.0) — AI Limits, main text setting, live status
 
 ### Added

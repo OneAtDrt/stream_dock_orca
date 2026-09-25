@@ -275,6 +275,7 @@ function keyDetail(key, p, now) {
   const head = `${badge(10, 8, 24)}${limText(40, 26, name, 13, LIM.on, 800)}`;
   if (!p) return `${head}${limText(72, 84, 'no data', 18, LIM.dim, 800, 'middle')}`;
   const rows = p.windows.slice(0, 3);
+  if (rows.length === 1) return head + singleWindow(rows[0], now, { cx: 72, labelY: 52, numY: 98, numSize: 50, barX: 12, barW: 120, barY: 108, resetY: 128 });
   // Fewer windows -> taller rows and bigger numbers, so the key is always filled.
   const [h, size] = rows.length === 1 ? [88, 40] : rows.length === 2 ? [46, 28] : [31, 22];
   return head + rows.map((w, i) => {
@@ -288,6 +289,17 @@ ${reset ? limText(134, barY + 6, `↻ ${reset}`, 10, LIM.sub, 700, 'end') : ''}`
   }).join('');
 }
 
+// A provider with a single window (e.g. ChatGPT with only a weekly limit): centred window name, one
+// big number, a thick full-width bar under it and the reset time, so the key isn't half empty.
+function singleWindow(w, now, g) {
+  const reset = formatReset(w.resetAt == null ? null : w.resetAt - now);
+  const color = leftColor(w.left);
+  return `${limText(g.cx, g.labelY, WINDOW_NAMES[w.label] || w.label, 13, w.model ? LIM.sub : LIM.on, 800, 'middle')}
+${limText(g.cx, g.numY, `${w.left}%`, g.numSize, color, 800, 'middle')}
+<rect x="${g.barX}" y="${g.barY}" width="${g.barW}" height="8" rx="4" fill="${LIM.track}"/><rect x="${g.barX}" y="${g.barY}" width="${Math.max(4, (w.left / 100) * g.barW).toFixed(1)}" height="8" rx="4" fill="${color}"/>
+${reset ? limText(g.cx, g.resetY, `↻ ${reset}`, 12, LIM.sub, 700, 'middle') : ''}`;
+}
+
 // ---- 176×112 knob panel: overview (two rows) or one provider in detail ----
 
 function panelDetail(key, p, now) {
@@ -295,7 +307,8 @@ function panelDetail(key, p, now) {
   const head = `${badge(8, 6, 20)}${limText(34, 21, name, 12, LIM.on, 800)}`;
   if (!p) return `${head}${limText(88, 70, 'no data', 18, LIM.dim, 800, 'middle')}`;
   const rows = p.windows.slice(0, 3);
-  const [h, size] = rows.length === 1 ? [70, 32] : rows.length === 2 ? [38, 22] : [26, 17];
+  if (rows.length === 1) return head + singleWindow(rows[0], now, { cx: 88, labelY: 44, numY: 80, numSize: 38, barX: 14, barW: 148, barY: 88, resetY: 106 });
+  const [h, size] = rows.length === 2 ? [38, 22] : [26, 17];
   return head + rows.map((w, i) => {
     const y = 34 + i * h;
     const reset = formatReset(w.resetAt == null ? null : w.resetAt - now);

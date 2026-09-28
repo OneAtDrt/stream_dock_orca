@@ -5,13 +5,13 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 ## [v0.3.2](https://github.com/OneAtDrt/stream_dock_orca/releases/tag/v0.3.2) — Live subagents, Codex names, subagents in summary
 
 ### Fixed
-* Subagents of sessions whose Orca hook entries are stale (e.g. Claude Code background sessions an Orca terminal only displays) weren't shown. The plugin now also reads Claude Code's own live state: `~/.claude/sessions/<pid>.json` (session id, folder, name, busy/idle), matched to the terminal by folder and title, and the subagent transcripts written in the last 3 minutes (`<session>/subagents/agent-<id>.jsonl` + `.meta.json`). A busy session counts as working, and the subagent live view uses the live transcript
-* Codex subagents showed as "default" (Codex's placeholder role, e.g. when a Claude agent runs `codex exec` and Codex reports its subagents on the Claude pane). Their key now shows the task (`spec_review`) and the subagent's name and model (`Socrates · gpt-6-astra`), read from Codex's session file (`~/.codex/sessions/…/rollout-…-<thread id>.jsonl`)
+* Subagents of sessions whose Orca hook entries are stale (e.g. Claude Code background sessions an Orca terminal only displays) weren't shown. The plugin now also reads Claude Code's own live state: `~/.claude/sessions/<pid>.json` (session id, folder, name, busy/idle), matched to the terminal by folder and title, and the subagent transcripts written in the last 3 minutes (`<session>/subagents/agent-<id>.jsonl` + `.meta.json`). A busy session counts as working, and the subagent live view uses the live transcript ([084c923](https://github.com/OneAtDrt/stream_dock_orca/commit/084c9231e0d51e39607bc42c44cab5a75972c942))
+* Codex subagents showed as "default" (Codex's placeholder role, e.g. when a Claude agent runs `codex exec` and Codex reports its subagents on the Claude pane). Their key now shows the task (`spec_review`) and the subagent's name and model (`Socrates · gpt-6-astra`), read from Codex's session file (`~/.codex/sessions/…/rollout-…-<thread id>.jsonl`) ([084c923](https://github.com/OneAtDrt/stream_dock_orca/commit/084c9231e0d51e39607bc42c44cab5a75972c942))
 
 ### Changed
-* Orca Summary: WORKING / WAITING now count running subagents too (a main agent only waiting on its subagents is counted through them); the header shows `ORCA · <main agents> +<subagents>`
-* Files: `plugin/claude-sessions.js` (new), `plugin/claude-sessions.test.js` (new), `plugin/codex-sessions.js` (new), `plugin/codex-sessions.test.js` (new), `plugin/agents.js`, `plugin/render.js`, `plugin/agents.test.js`, `README.md`, `CHANGELOG.md`; version 0.3.2 in `manifest.json`, `package.json`, `package-lock.json`
-* Tests: 28
+* Orca Summary: WORKING / WAITING now count running subagents too (a main agent only waiting on its subagents is counted through them); the header shows `ORCA · <main agents> +<subagents>` ([084c923](https://github.com/OneAtDrt/stream_dock_orca/commit/084c9231e0d51e39607bc42c44cab5a75972c942))
+* Files: `plugin/claude-sessions.js` (new), `plugin/claude-sessions.test.js` (new), `plugin/codex-sessions.js` (new), `plugin/codex-sessions.test.js` (new), `plugin/agents.js`, `plugin/render.js`, `plugin/agents.test.js`, `README.md`, `CHANGELOG.md`; version 0.3.2 in `manifest.json`, `package.json`, `package-lock.json` ([084c923](https://github.com/OneAtDrt/stream_dock_orca/commit/084c9231e0d51e39607bc42c44cab5a75972c942))
+* Tests: 28 ([084c923](https://github.com/OneAtDrt/stream_dock_orca/commit/084c9231e0d51e39607bc42c44cab5a75972c942))
 
 ## [v0.3.1](https://github.com/OneAtDrt/stream_dock_orca/releases/tag/v0.3.1) — Single-limit layout
 

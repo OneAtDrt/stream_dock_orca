@@ -277,3 +277,16 @@ test('main text: auto shows the chat when a repo has several agents', () => {
   assert.match(svg, />clients to</);
   assert.match(svg, />my-api</); // repo moves to the small line
 });
+
+test('summary counts running subagents as working agents', () => {
+  const { summaryCounts, renderSummary } = require('./render');
+  const agents = [
+    { status: 'working', subagents: [] },
+    { status: 'subagents', subagents: [{ state: 'working' }, { state: 'working' }, { state: 'blocked' }] },
+    { status: 'waiting', subagents: [] },
+    { status: 'idle', subagents: [] }
+  ];
+  assert.deepEqual(summaryCounts(agents), { waiting: 2, working: 3, done: 0, main: 4, subagents: 3 });
+  assert.match(decodeURIComponent(renderSummary(agents)), /ORCA · 4 \+3/);
+  assert.match(decodeURIComponent(renderSummary([{ status: 'idle', subagents: [] }])), /ORCA · 1</);
+});

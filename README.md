@@ -21,7 +21,7 @@ A row of keys: an agent whose subagents are still running, its two subagent keys
 | Action | Shows | Press |
 |---|---|---|
 | **Orca Agent** | One agent: its status and how long it's been in it, agent type, project, task title, and a small badge with its number of running subagents. Or, on the keys right after it, one running subagent each: `↳ SUB i/n`, its age, type, description and the parent's project (dashed border) | Opens that agent's terminal in Orca. A subagent key opens a live view of that subagent (see below) |
-| **Orca Summary** | Total agents, plus how many are waiting, working or done | Jumps to the first agent that needs you (then done, then working) |
+| **Orca Summary** | Main agents (+ subagents) in the header, and how many agents are waiting, working or done. Running subagents count as working (or waiting, when blocked) | Jumps to the first agent that needs you (then done, then working) |
 | **AI Limits** | Claude and ChatGPT (Codex) limits left: big number = the tightest general window, ⏱ = time left in the 5-hour session window, thin bars for 5-hour, weekly and Claude's separate Fable weekly limit. Green over 50%, amber over 20%, red below | Cycles pages: overview (both, big numbers) → Claude in detail → ChatGPT in detail; also refreshes. On a knob, turning also pages, and the ring shows the colour of the provider with the least left |
 
 ### Status colours
@@ -85,6 +85,10 @@ Pressing a main agent key runs `orca terminal switch --terminal <handle>` and br
 Overrides (environment variables): `ORCA_BIN`, `ORCA_HOOK_STATUS_FILE`.
 
 **Stale hook entries.** Orca stops receiving hook events from some sessions (e.g. ones started before its hooks were set up), and their last entry can be a day old. The live terminal title wins over such entries: a spinner means working, and a title that goes from spinner to `✳` while the plugin runs shows **DONE** for 30 min. A "waiting" entry counts only while it's recent (under 10 min) if the title is spinning, and a "working" entry older than 30 min without a spinner counts as idle.
+
+**Claude Code's live state.** Some sessions never reach Orca's hook file at all, e.g. Claude Code background sessions that an Orca terminal only displays. For Claude terminals the plugin therefore also reads `~/.claude/sessions/<pid>.json` (session id, folder, name, busy/idle), matched to the terminal by folder and title. It also reads that session's subagent transcripts: the ones written in the last 3 minutes count as running, with type and description from their `.meta.json`.
+
+**Codex subagent names.** Codex gives a subagent the role and model `default` when its spawn names none, and Orca reports that as-is (for example when a Claude agent runs `codex exec`). For such entries the plugin opens the subagent's Codex session file (`~/.codex/sessions/YYYY/MM/DD/rollout-…-<thread id>.jsonl`, looked up by id in the last 3 days) and shows its task (`agent_path`), nickname and real model instead.
 
 **AI Limits.** The numbers are the ones Orca already fetched (`orca account list --json` → `rateLimits`), read once a minute. So the plugin needs no Keychain access and makes no calls to the rate-limited usage APIs itself. Fable comes from Orca's `fableWeekly`; it doesn't drive the big number, because other models still work when only the Fable quota is used up. The knob ring uses `knob-led.js`, shared with the Audio Control and Network plugins.
 

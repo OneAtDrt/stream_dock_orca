@@ -5,6 +5,9 @@ const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
 
+const { liveClaudeState } = require('./claude-sessions');
+const { codexSubagentMeta, isPlaceholder } = require('./codex-sessions');
+
 const ORCA_BIN = process.env.ORCA_BIN || '/Applications/Orca.app/Contents/Resources/bin/orca';
 const HOOK_STATUS_FILE = process.env.ORCA_HOOK_STATUS_FILE
   || path.join(os.homedir(), 'Library/Application Support/orca/agent-hooks/last-status.json');
@@ -105,7 +108,8 @@ function activeSubagents(hook, now, meta = {}) {
     .map((s) => ({
       id: s.id,
       state: s.state,
-      agentType: s.agentType || '',
+      // "default" is Codex's placeholder role: prefer the name found in its session file.
+      agentType: (isPlaceholder(s.agentType) && meta[s.id]?.agentType) || s.agentType || '',
       description: (s.description || meta[s.id]?.description || '').replace(/\s+/g, ' ').trim(),
       startedAt: s.startedAt || 0
     }))
@@ -132,9 +136,10 @@ const HOOK_STALE_MS = 30 * 60 * 1000;
 
 // stoppedAt: when this plugin saw the title go from busy to idle. That's our own "finished" signal
 // for sessions whose hook entries never arrive (Orca's bell case).
-function deriveStatus(terminal, hook, now, subagentCount = 0, stoppedAt = null) {
+function deriveStatus(terminal, hook, now, subagentCount = 0, stoppedAt = null, liveBusy = false) {
   const state = hook?.payload?.state;
-  const busy = titleIsBusy(terminal);
+  // Busy spinner in the title, or Claude Code's own session file saying "busy".
+  const busy = titleIsBusy(terminal) || liveBusy;
   const hookAge = now - (hook?.receivedAt || 0);
   const justFinished = Boolean(stoppedAt && now - stoppedAt < DONE_FADE_MS);
   if ((state === 'blocked' || state === 'waiting' || state === 'permission') && !(busy && hookAge > WAITING_TRUST_MS)) return 'waiting';
@@ -187,14 +192,18 @@ function taskLabel(terminal, hook) {
   return (hook?.payload?.prompt || '').replace(/\s+/g, ' ').trim();
 }
 
-function buildAgents(terminals, hookEntries, now = Date.now(), subagentMeta = {}, watch = new Map()) {
+// live: handle -> { busy, transcriptPath, subagents } from Claude Code's session files (claude-sessions.js).
+function buildAgents(terminals, hookEntries, now = Date.now(), subagentMeta = {}, watch = new Map(), live = {}) {
   const agents = [];
   for (const terminal of terminals) {
     if (!terminal.agentIdentity || terminal.orphaned || terminal.connected === false) continue;
     const hook = hookEntries[`${terminal.tabId}:${terminal.leafId}`];
-    const subagents = activeSubagents(hook, now, subagentMeta);
+    const liveState = live[terminal.handle];
+    // Orca's roster first; when its entry is stale/empty, the subagents Claude Code is writing now.
+    const rostered = activeSubagents(hook, now, subagentMeta);
+    const subagents = rostered.length ? rostered : liveState?.subagents || [];
     const stoppedAt = watch.get(terminal.handle)?.stoppedAt || null;
-    const status = deriveStatus(terminal, hook, now, subagents.length, stoppedAt);
+    const status = deriveStatus(terminal, hook, now, subagents.length, stoppedAt, Boolean(liveState?.busy));
     const hookDone = hook?.payload?.state === 'done' && now - (hook.stateStartedAt || 0) < DONE_FADE_MS;
     const since = (status === 'subagents' && subagents[0].startedAt)
       || (status === 'done' && !hookDone && stoppedAt)
@@ -203,7 +212,7 @@ function buildAgents(terminals, hookEntries, now = Date.now(), subagentMeta = {}
       handle: terminal.handle,
       agent: terminal.agentIdentity,
       worktreePath: terminal.worktreePath,
-      transcriptPath: hook?.providerSession?.transcriptPath || null,
+      transcriptPath: liveState?.transcriptPath || hook?.providerSession?.transcriptPath || null,
       project: projectLabel(terminal.worktreePath),
       workspace: workspaceLabel(terminal.worktreePath),
       task: taskLabel(terminal, hook),
@@ -254,7 +263,9 @@ function flattenSlots(agents) {
 async function loadAgents() {
   const [terminals, hooks] = await Promise.all([listTerminals(), readHookStatus()]);
   const now = Date.now();
-  return buildAgents(terminals, hooks, now, await readSubagentMeta(hooks), watchTitles(terminals, now));
+  const live = await liveClaudeState(terminals.filter((t) => !t.orphaned && t.connected !== false), (t) => taskLabel(t), now).catch(() => ({}));
+  const meta = { ...(await readSubagentMeta(hooks)), ...(await codexSubagentMeta(hooks).catch(() => ({}))) };
+  return buildAgents(terminals, hooks, now, meta, watchTitles(terminals, now), live);
 }
 
 function bringOrcaToFront() {

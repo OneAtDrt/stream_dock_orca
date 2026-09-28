@@ -158,17 +158,32 @@ ${lines.map((l, i) => `<text x="72" y="${72 + i * 18}" ${FONT} font-size="12" fi
   return toDataUri(svgFrame(body, '#7f1d1d'));
 }
 
-function renderSummary(agents, blink = false) {
+// Counts every agent that is actually working: main agents busy themselves plus each running
+// subagent (a main agent only waiting on its subagents is counted through them).
+function summaryCounts(agents) {
   const count = (s) => agents.filter((a) => a.status === s).length;
+  const subs = agents.flatMap((a) => a.subagents || []);
+  const subWaiting = subs.filter((s) => s.state !== 'working').length;
+  return {
+    waiting: count('waiting') + subWaiting,
+    working: count('working') + (subs.length - subWaiting),
+    done: count('done'),
+    main: agents.length,
+    subagents: subs.length
+  };
+}
+
+function renderSummary(agents, blink = false) {
+  const c = summaryCounts(agents);
   const rows = [
-    ['waiting', count('waiting')],
-    ['working', count('working') + count('subagents')],
-    ['done', count('done')]
+    ['waiting', c.waiting],
+    ['working', c.working],
+    ['done', c.done]
   ];
   const needsYou = rows[0][1] > 0;
   const border = needsYou ? (blink ? '#fde68a' : STATUS_STYLE.waiting.color) : '#1e293b';
   const body = `
-<text x="72" y="30" ${FONT} font-size="13" font-weight="800" fill="#e2e8f0" text-anchor="middle" letter-spacing="1">ORCA · ${agents.length}</text>
+<text x="72" y="30" ${FONT} font-size="13" font-weight="800" fill="#e2e8f0" text-anchor="middle" letter-spacing="1">${escapeXml(c.subagents ? `ORCA · ${c.main} +${c.subagents}` : `ORCA · ${c.main}`)}</text>
 ${rows.map(([status, n], i) => {
     const y = 44 + i * 30;
     const s = STATUS_STYLE[status];
@@ -338,4 +353,4 @@ function renderLimits(model, { square = false, now = Date.now(), page = 0 } = {}
   return `data:image/svg+xml;charset=utf8,${encodeURIComponent(svg)}`;
 }
 
-module.exports = { mainTextFor, renderLimits, LIMIT_PAGES, leftColor, renderAgent, renderSubagent, renderEmpty, renderError, renderSummary, formatAge, wrap };
+module.exports = { summaryCounts, mainTextFor, renderLimits, LIMIT_PAGES, leftColor, renderAgent, renderSubagent, renderEmpty, renderError, renderSummary, formatAge, wrap };

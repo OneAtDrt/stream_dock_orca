@@ -3,7 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  buildAgents, flattenSlots, deriveStatus, activeSubagents, subagentMetaPath, projectLabel, taskLabel, DONE_FADE_MS, SUBAGENT_STALE_MS
+  buildAgents, flattenSlots, deriveStatus, activeSubagents, subagentMetaPath, projectLabel, taskLabel, SUBAGENT_STALE_MS
 } = require('./agents');
 const { wrap, formatAge, renderAgent, renderSubagent, renderSummary } = require('./render');
 
@@ -26,7 +26,29 @@ test('hook states map to display statuses', () => {
   for (const s of ['blocked', 'waiting', 'permission']) assert.equal(deriveStatus(term(), hook(s), NOW), 'waiting');
   assert.equal(deriveStatus(term(), hook('done'), NOW), 'done');
   assert.equal(deriveStatus(term(), hook('done', { hookEventName: 'SessionStart' }), NOW), 'idle');
-  assert.equal(deriveStatus(term(), hook('done', { stateStartedAt: NOW - DONE_FADE_MS - 1 }), NOW), 'idle');
+  // No timeout: a finished turn stays DONE until the pane is viewed after it.
+  assert.equal(deriveStatus(term(), hook('done', { stateStartedAt: NOW - 3 * 86400e3 }), NOW), 'done');
+  assert.equal(deriveStatus(term(), hook('done'), NOW, 0, null, false, NOW - 6000), 'done');
+  assert.equal(deriveStatus(term(), hook('done'), NOW, 0, null, false, NOW - 1000), 'idle');
+});
+
+test('DONE is unread: finished after the last view (Orca or a key press)', () => {
+  const { finishedAt, viewTimes } = require('./agents');
+  assert.equal(finishedAt(hook('done')), NOW - 5000);
+  assert.equal(finishedAt(hook('done', { hookEventName: 'SessionStart' })), 0);
+  assert.equal(finishedAt(hook('working')), 0);
+  // A title stop right after the hook's done is the same turn; a later one is a new turn (stale hook).
+  assert.equal(finishedAt(hook('done'), NOW - 3000), NOW - 5000);
+  assert.equal(finishedAt(hook('done', { stateStartedAt: NOW - 3600e3 }), NOW - 3000), NOW - 3000);
+  assert.equal(finishedAt(undefined, NOW - 3000), NOW - 3000);
+  assert.deepEqual(viewTimes({ a: 5, b: 9 }, { b: 7, c: 3 }), { a: 5, b: 9, c: 3 });
+  assert.deepEqual(viewTimes({ a: 5 }, { a: 8 }), { a: 8 });
+  const [viewed] = buildAgents([term()], { 'tab:leaf': hook('done') }, NOW, {}, new Map(), {}, { 'tab:leaf': NOW - 1000 });
+  assert.equal(viewed.status, 'idle');
+  assert.equal(viewed.pane, 'tab:leaf');
+  const [again] = buildAgents([term()], { 'tab:leaf': hook('done') }, NOW, {}, new Map(), {}, { 'tab:leaf': NOW - 9000 });
+  assert.equal(again.status, 'done');
+  assert.equal(again.since, NOW - 5000);
 });
 
 test('falls back to the terminal title glyph without hook data', () => {
@@ -226,7 +248,7 @@ test('a live busy title beats a stale hook entry; idle agents sort after active 
   const staleStop = { hookEventName: 'Stop', payload: { state: 'done' }, receivedAt: NOW - 22 * 3600e3, stateStartedAt: NOW - 22 * 3600e3 };
   // Session whose hooks stopped arriving yesterday, but the terminal is spinning now.
   assert.equal(deriveStatus(term({ title: '◑ Migrate clients' }), staleStop, NOW), 'working');
-  assert.equal(deriveStatus(term({ title: '✳ Migrate clients' }), staleStop, NOW), 'idle');
+  assert.equal(deriveStatus(term({ title: '✳ Migrate clients' }), staleStop, NOW, 0, null, false, NOW - 20 * 3600e3), 'idle');
   // A stale "working" entry with an idle title is not working forever.
   const staleWork = { hookEventName: 'PreToolUse', payload: { state: 'working' }, receivedAt: NOW - 3600e3 };
   assert.equal(deriveStatus(term({ title: '✳ Old task' }), staleWork, NOW), 'idle');
@@ -237,7 +259,7 @@ test('a live busy title beats a stale hook entry; idle agents sort after active 
   assert.equal(deriveStatus(term({ title: '◑ Task' }), { ...wait, receivedAt: NOW - 3600e3 }, NOW), 'working');
   // Ordering: active first, idle last.
   const hooks = { 'a:l': staleStop, 'b:l': staleStop };
-  const agents = buildAgents([term({ handle: 'idle', tabId: 'a', title: '✳ Idle one' }), term({ handle: 'busy', tabId: 'b', title: '◑ Busy one' })], hooks, NOW);
+  const agents = buildAgents([term({ handle: 'idle', tabId: 'a', title: '✳ Idle one' }), term({ handle: 'busy', tabId: 'b', title: '◑ Busy one' })], hooks, NOW, {}, new Map(), {}, { 'a:l': NOW - 20 * 3600e3 });
   assert.deepEqual(agents.map((a) => `${a.handle}:${a.status}`), ['busy:working', 'idle:idle']);
 });
 
@@ -247,18 +269,28 @@ test('a session seen working and now idle shows DONE even without hook updates',
   const staleStop = { hookEventName: 'Stop', payload: { state: 'done' }, receivedAt: NOW - 50 * 3600e3, stateStartedAt: NOW - 50 * 3600e3 };
   const t = (title) => ({ handle: 'h1', tabId: 't', leafId: 'l', agentIdentity: 'claude', connected: true, worktreePath: '/w/my-api', lastOutputAt: NOW, title });
   const watch = new Map();
+  const viewed = { 't:l': NOW - 40 * 3600e3 }; // the old stop was viewed long ago
   watchTitles([t('✳ Task')], NOW - 60e3, watch); // first seen idle: no transition
-  assert.equal(buildAgents([t('✳ Task')], { 't:l': staleStop }, NOW, {}, watch)[0].status, 'idle');
+  assert.equal(buildAgents([t('✳ Task')], { 't:l': staleStop }, NOW, {}, watch, {}, viewed)[0].status, 'idle');
   watchTitles([t('◑ Task')], NOW - 30e3, watch); // working
-  assert.equal(buildAgents([t('◑ Task')], { 't:l': staleStop }, NOW - 30e3, {}, watch)[0].status, 'working');
+  assert.equal(buildAgents([t('◑ Task')], { 't:l': staleStop }, NOW - 30e3, {}, watch, {}, viewed)[0].status, 'working');
   watchTitles([t('✳ Task')], NOW - 10e3, watch); // finished
-  const [done] = buildAgents([t('✳ Task')], { 't:l': staleStop }, NOW, {}, watch);
+  const [done] = buildAgents([t('✳ Task')], { 't:l': staleStop }, NOW, {}, watch, {}, viewed);
   assert.equal(done.status, 'done');
   assert.equal(done.since, NOW - 10e3);
-  // Fades to idle after 30 min; a closed terminal is forgotten.
-  assert.equal(buildAgents([t('✳ Task')], { 't:l': staleStop }, NOW + 31 * 60e3, {}, watch)[0].status, 'idle');
+  // Stays DONE (no timeout) until viewed after the stop; a closed terminal is forgotten.
+  assert.equal(buildAgents([t('✳ Task')], { 't:l': staleStop }, NOW + 5 * 3600e3, {}, watch, {}, viewed)[0].status, 'done');
+  assert.equal(buildAgents([t('✳ Task')], { 't:l': staleStop }, NOW, {}, watch, {}, { 't:l': NOW - 5e3 })[0].status, 'idle');
   watchTitles([], NOW, watch);
   assert.equal(watch.size, 0);
+  // Saved stops survive a restart (a fresh watch) and new stops are recorded.
+  const state = { stops: { 't:l': NOW - 10e3 }, views: {} };
+  const fresh = watchTitles([t('✳ Task')], NOW, new Map(), state);
+  assert.equal(fresh.get('h1').stoppedAt, NOW - 10e3);
+  watchTitles([t('◑ Task')], NOW + 1e3, fresh, state);
+  watchTitles([t('✳ Task')], NOW + 2e3, fresh, state);
+  assert.equal(state.stops['t:l'], NOW + 2e3);
+  assert.equal(state.dirty, true);
 });
 
 test('main text: auto shows the chat when a repo has several agents', () => {

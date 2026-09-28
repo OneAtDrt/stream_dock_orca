@@ -106,7 +106,7 @@ function previews() {
     ['agent-subagents', renderAgent(byProject('backend'), NOW), 'SUBS ×2: turn over, 2 subagents running'],
     ['subagent-1', renderSubagent(subs[0], NOW), 'Subagent 1 of 2'],
     ['subagent-2', renderSubagent(subs[1], NOW), 'Subagent 2 of 2'],
-    ['agent-done', renderAgent(byProject('docs-site'), NOW), 'DONE: finished in the last 30 min'],
+    ['agent-done', renderAgent(byProject('docs-site'), NOW), 'DONE: finished, not viewed yet'],
     ['agent-idle', renderAgent(byProject('mobile-app'), NOW), 'IDLE'],
     ['summary', renderSummary(agents), 'Orca Summary'],
     ['empty', renderEmpty(7), 'Empty slot'],

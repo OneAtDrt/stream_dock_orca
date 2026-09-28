@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const WebSocket = require('ws');
-const { loadAgents, flattenSlots, focusAgent, openSubagentView } = require('./agents');
+const { loadAgents, flattenSlots, focusAgent, openSubagentView, markViewed } = require('./agents');
 const { mainTextFor, renderLimits, LIMIT_PAGES, leftColor, renderAgent, renderSubagent, renderEmpty, renderError, renderSummary } = require('./render');
 
 const SLOT_ACTION = 'com.oneatdrt.orca-agents.slot';
@@ -143,6 +143,11 @@ async function onPress(context) {
   }
   await focusAgent(target.handle);
   log(`focused ${target.handle} (${target.project || target.parentProject})`);
+  // Opening the agent reads its finished turn: DONE turns grey.
+  if (target.kind !== 'subagent') {
+    markViewed(target.pane);
+    refresh();
+  }
 }
 
 async function refreshLimits() {

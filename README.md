@@ -12,7 +12,7 @@ A row of keys: an agent whose subagents are still running, its two subagent keys
 
 <table>
 <tr><td align="center"><img src="docs/previews/agent-waiting.png" width="144" alt="WAITING: needs you"><br><sub>WAITING: needs you</sub></td><td align="center"><img src="docs/previews/agent-working.png" width="144" alt="WORKING"><br><sub>WORKING</sub></td><td align="center"><img src="docs/previews/agent-subagents.png" width="144" alt="SUBS ×2: own turn over, 2 subagents running"><br><sub>SUBS ×2: own turn over, 2 subagents running</sub></td><td align="center"><img src="docs/previews/subagent-1.png" width="144" alt="Subagent key 1/2"><br><sub>Subagent key 1/2</sub></td><td align="center"><img src="docs/previews/subagent-2.png" width="144" alt="Subagent key 2/2"><br><sub>Subagent key 2/2</sub></td></tr>
-<tr><td align="center"><img src="docs/previews/agent-done.png" width="144" alt="DONE (last 30 min)"><br><sub>DONE (last 30 min)</sub></td><td align="center"><img src="docs/previews/agent-idle.png" width="144" alt="IDLE"><br><sub>IDLE</sub></td><td align="center"><img src="docs/previews/summary.png" width="144" alt="Orca Summary"><br><sub>Orca Summary</sub></td><td align="center"><img src="docs/previews/empty.png" width="144" alt="Empty slot"><br><sub>Empty slot</sub></td></tr>
+<tr><td align="center"><img src="docs/previews/agent-done.png" width="144" alt="DONE (unread)"><br><sub>DONE (unread)</sub></td><td align="center"><img src="docs/previews/agent-idle.png" width="144" alt="IDLE"><br><sub>IDLE</sub></td><td align="center"><img src="docs/previews/summary.png" width="144" alt="Orca Summary"><br><sub>Orca Summary</sub></td><td align="center"><img src="docs/previews/empty.png" width="144" alt="Empty slot"><br><sub>Empty slot</sub></td></tr>
 <tr><td align="center"><img src="docs/previews/agent-chat-name.png" width="144" alt="Main text: chat name"><br><sub>Main text: chat name</sub></td><td align="center"><img src="docs/previews/limits-overview.png" width="144" alt="AI Limits: overview"><br><sub>AI Limits: overview</sub></td><td align="center"><img src="docs/previews/limits-claude.png" width="144" alt="AI Limits: Claude (press)"><br><sub>AI Limits: Claude (press)</sub></td><td align="center"><img src="docs/previews/limits-chatgpt.png" width="144" alt="AI Limits: ChatGPT (press)"><br><sub>AI Limits: ChatGPT (press)</sub></td></tr>
 </table>
 
@@ -31,7 +31,7 @@ A row of keys: an agent whose subagents are still running, its two subagent keys
 | **WAITING** | amber, blinking border | The agent needs your input or permission |
 | **WORKING** | blue | The agent is busy |
 | **SUBS ×n** | indigo, fork icon | The agent finished its own turn but n subagents are still running; age counts from the oldest subagent |
-| **DONE** | green | The agent finished a turn in the last 30 min |
+| **DONE** | green | The agent finished a turn you haven't looked at yet (like Orca's bell). Stays green with no timeout; turns grey 1–2 s after you open the tab, in Orca or with the key |
 | **IDLE** | grey | Nothing happening |
 
 Agent keys fill in priority order: waiting, working (incl. SUBS), done, idle. Each agent's running subagents come right after it, oldest first, and disappear when they finish, so later keys shift. Each **Orca Agent** key gets a slot number when you first place it (1st key = slot 1, 2nd = slot 2, ...). The number is saved with the key.
@@ -69,10 +69,11 @@ To update, pull and run `./install.sh` again.
 
 ## How it works
 
-Every 2 s the plugin reads two sources:
+Every 2 s the plugin reads three sources:
 
 1. **`orca terminal list --json`:** the live Orca terminals that have an agent (`agentIdentity`).
 2. **`~/Library/Application Support/orca/agent-hooks/last-status.json`:** the latest agent hook state for each pane, matched to terminals by `tabId:leafId`.
+3. **`~/Library/Application Support/orca/profiles/local-default/orca-data.json`:** Orca's `ui.acknowledgedAgentsByPaneKey`, the time each pane was last viewed (what clears Orca's bell). Re-read only when the file changes.
 
 If a pane has no hook entry, the plugin uses the first character of the Claude Code terminal title instead. A spinner means working and `✳` means idle.
 
@@ -82,9 +83,11 @@ Pressing a main agent key runs `orca terminal switch --terminal <handle>` and br
 
 **Subagent live view.** A Claude Code subagent runs inside its main agent's session and has no terminal of its own, and Orca has no way to open a subagent from outside. So pressing a subagent key opens an Orca terminal tab named `↳ <type> <id>` in the main agent's worktree (`orca terminal create --focus`). The tab runs `plugin/subagent-view.js`, which follows the subagent's transcript (`<session>/subagents/agent-<id>.jsonl`) live and shows its task (▶), what it says, each tool call (⚙) and a shortened result (↳). Pressing the key again switches to the same tab instead of opening another. The tab stays open after the subagent finishes; close it when done. If the view can't be opened, the key falls back to the main agent's terminal.
 
-Overrides (environment variables): `ORCA_BIN`, `ORCA_HOOK_STATUS_FILE`.
+**DONE = unread.** An agent is DONE while its last finished turn is newer than the last time its tab was viewed. Orca records a view when you open a tab that has something unread (it saves it within about a second), and switching to the tab with a Stream Dock key counts the same. The plugin also records its own key presses, because Orca records nothing for sessions whose hook entries are stale (Orca doesn't see them as unread).
 
-**Stale hook entries.** Orca stops receiving hook events from some sessions (e.g. ones started before its hooks were set up), and their last entry can be a day old. The live terminal title wins over such entries: a spinner means working, and a title that goes from spinner to `✳` while the plugin runs shows **DONE** for 30 min. A "waiting" entry counts only while it's recent (under 10 min) if the title is spinning, and a "working" entry older than 30 min without a spinner counts as idle.
+Overrides (environment variables): `ORCA_BIN`, `ORCA_HOOK_STATUS_FILE`, `ORCA_DATA_FILE`, `ORCA_AGENTS_STATE_FILE` (the plugin's own record, default `$TMPDIR/oneatdrt-orca-agents.json`).
+
+**Stale hook entries.** Orca stops receiving hook events from some sessions (e.g. ones started before its hooks were set up), and their last entry can be a day old. The live terminal title wins over such entries: a spinner means working, and a title that goes from spinner to `✳` while the plugin runs counts as a finished turn and shows **DONE** until you open the tab with its key. The plugin keeps these stop times and its key presses in `$TMPDIR/oneatdrt-orca-agents.json`, so they survive a Stream Dock restart. A "waiting" entry counts only while it's recent (under 10 min) if the title is spinning, and a "working" entry older than 30 min without a spinner counts as idle.
 
 **Claude Code's live state.** Some sessions never reach Orca's hook file at all, e.g. Claude Code background sessions that an Orca terminal only displays. For Claude terminals the plugin therefore also reads `~/.claude/sessions/<pid>.json` (session id, folder, name, busy/idle), matched to the terminal by folder and title. It also reads that session's subagent transcripts: the ones written in the last 3 minutes count as running, with type and description from their `.meta.json`.
 

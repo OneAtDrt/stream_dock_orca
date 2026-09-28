@@ -1,6 +1,7 @@
 'use strict';
 
 const { execFile } = require('node:child_process');
+const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const os = require('node:os');
 const path = require('node:path');
@@ -11,9 +12,15 @@ const { codexSubagentMeta, isPlaceholder } = require('./codex-sessions');
 const ORCA_BIN = process.env.ORCA_BIN || '/Applications/Orca.app/Contents/Resources/bin/orca';
 const HOOK_STATUS_FILE = process.env.ORCA_HOOK_STATUS_FILE
   || path.join(os.homedir(), 'Library/Application Support/orca/agent-hooks/last-status.json');
+// Orca's UI state: acknowledgedAgentsByPaneKey = when each pane was last viewed (Orca's bell/unread).
+const ORCA_DATA_FILE = process.env.ORCA_DATA_FILE
+  || path.join(os.homedir(), 'Library/Application Support/orca/profiles/local-default/orca-data.json');
+// This plugin's own record, kept across restarts: when it saw each pane's title go idle, and when
+// a key press opened the pane.
+const STATE_FILE = process.env.ORCA_AGENTS_STATE_FILE || path.join(os.tmpdir(), 'oneatdrt-orca-agents.json');
 
-// A finished turn stays "done" (green) this long, then fades to "idle" (grey).
-const DONE_FADE_MS = 30 * 60 * 1000;
+// A title stop this close after the hook's "done" is the same finished turn.
+const SAME_TURN_MS = 60 * 1000;
 
 // "subagents": the main agent's own turn is over but its subagents are still running.
 const STATUS_ORDER = { waiting: 0, working: 1, subagents: 1, done: 2, idle: 3 };
@@ -134,35 +141,51 @@ function leadIsBusy(terminal, hook) {
 const WAITING_TRUST_MS = 10 * 60 * 1000;
 const HOOK_STALE_MS = 30 * 60 * 1000;
 
-// stoppedAt: when this plugin saw the title go from busy to idle. That's our own "finished" signal
-// for sessions whose hook entries never arrive (Orca's bell case).
-function deriveStatus(terminal, hook, now, subagentCount = 0, stoppedAt = null, liveBusy = false) {
+const paneKey = (terminal) => `${terminal.tabId}:${terminal.leafId}`;
+
+// When the agent last finished a turn: Orca's hook "done" time or, for sessions whose hook entries
+// are stale, when this plugin saw the title go from busy to idle (stoppedAt). 0 = unknown.
+function finishedAt(hook, stoppedAt = null) {
+  const hookDone = hook?.payload?.state === 'done' && hook.hookEventName !== 'SessionStart'
+    ? hook.stateStartedAt || hook.receivedAt || 0 : 0;
+  if (!stoppedAt || stoppedAt - hookDone < SAME_TURN_MS) return hookDone || stoppedAt || 0;
+  return stoppedAt;
+}
+
+// viewedAt: when the pane was last viewed (in Orca or by a key press). A finished turn stays "done"
+// (unread, like Orca's bell) until then, with no timeout.
+function deriveStatus(terminal, hook, now, subagentCount = 0, stoppedAt = null, liveBusy = false, viewedAt = 0) {
   const state = hook?.payload?.state;
   // Busy spinner in the title, or Claude Code's own session file saying "busy".
   const busy = titleIsBusy(terminal) || liveBusy;
   const hookAge = now - (hook?.receivedAt || 0);
-  const justFinished = Boolean(stoppedAt && now - stoppedAt < DONE_FADE_MS);
   if ((state === 'blocked' || state === 'waiting' || state === 'permission') && !(busy && hookAge > WAITING_TRUST_MS)) return 'waiting';
   if (subagentCount > 0) return leadIsBusy(terminal, hook) ? 'working' : 'subagents';
   if (busy) return 'working';
   if (state === 'working' && hookAge < HOOK_STALE_MS) return 'working';
-  if (state === 'done' && hook.hookEventName !== 'SessionStart'
-    && now - (hook.stateStartedAt || hook.receivedAt || 0) < DONE_FADE_MS) return 'done';
-  return justFinished ? 'done' : 'idle';
+  const finished = finishedAt(hook, stoppedAt);
+  return finished && finished > (viewedAt || 0) ? 'done' : 'idle';
 }
 
 // Title transitions per terminal handle, kept across refreshes: { busy, stoppedAt }.
 const titleWatch = new Map();
 
-function watchTitles(terminals, now = Date.now(), watch = titleWatch) {
+// state: this plugin's persisted state ({ stops, views } by pane); stops seed terminals seen for the
+// first time (e.g. after a restart) and new stops are written back.
+function watchTitles(terminals, now = Date.now(), watch = titleWatch, state = null) {
   const seen = new Set();
   for (const t of terminals) {
     seen.add(t.handle);
     const busy = titleIsBusy(t);
     const prev = watch.get(t.handle);
     if (busy) watch.set(t.handle, { busy: true, stoppedAt: null });
-    else if (prev?.busy) watch.set(t.handle, { busy: false, stoppedAt: now });
-    else if (!prev) watch.set(t.handle, { busy: false, stoppedAt: null });
+    else if (prev?.busy) {
+      watch.set(t.handle, { busy: false, stoppedAt: now });
+      if (state) {
+        state.stops[paneKey(t)] = now;
+        state.dirty = true;
+      }
+    } else if (!prev) watch.set(t.handle, { busy: false, stoppedAt: state?.stops[paneKey(t)] || null });
   }
   for (const handle of watch.keys()) if (!seen.has(handle)) watch.delete(handle);
   return watch;
@@ -193,23 +216,25 @@ function taskLabel(terminal, hook) {
 }
 
 // live: handle -> { busy, transcriptPath, subagents } from Claude Code's session files (claude-sessions.js).
-function buildAgents(terminals, hookEntries, now = Date.now(), subagentMeta = {}, watch = new Map(), live = {}) {
+// views: pane -> when it was last viewed (viewTimes).
+function buildAgents(terminals, hookEntries, now = Date.now(), subagentMeta = {}, watch = new Map(), live = {}, views = {}) {
   const agents = [];
   for (const terminal of terminals) {
     if (!terminal.agentIdentity || terminal.orphaned || terminal.connected === false) continue;
-    const hook = hookEntries[`${terminal.tabId}:${terminal.leafId}`];
+    const pane = paneKey(terminal);
+    const hook = hookEntries[pane];
     const liveState = live[terminal.handle];
     // Orca's roster first; when its entry is stale/empty, the subagents Claude Code is writing now.
     const rostered = activeSubagents(hook, now, subagentMeta);
     const subagents = rostered.length ? rostered : liveState?.subagents || [];
     const stoppedAt = watch.get(terminal.handle)?.stoppedAt || null;
-    const status = deriveStatus(terminal, hook, now, subagents.length, stoppedAt, Boolean(liveState?.busy));
-    const hookDone = hook?.payload?.state === 'done' && now - (hook.stateStartedAt || 0) < DONE_FADE_MS;
+    const status = deriveStatus(terminal, hook, now, subagents.length, stoppedAt, Boolean(liveState?.busy), views[pane]);
     const since = (status === 'subagents' && subagents[0].startedAt)
-      || (status === 'done' && !hookDone && stoppedAt)
+      || (status === 'done' && finishedAt(hook, stoppedAt))
       || hook?.stateStartedAt || hook?.receivedAt || terminal.lastOutputAt || now;
     agents.push({
       handle: terminal.handle,
+      pane,
       agent: terminal.agentIdentity,
       worktreePath: terminal.worktreePath,
       transcriptPath: liveState?.transcriptPath || hook?.providerSession?.transcriptPath || null,
@@ -260,12 +285,84 @@ function flattenSlots(agents) {
   return slots;
 }
 
+// Orca's last-viewed time per pane. The file is large, so it is re-read only when it changes; a
+// read mid-write keeps the previous values.
+let orcaViews = { mtimeMs: 0, acks: {} };
+
+async function readOrcaViews(file = ORCA_DATA_FILE) {
+  try {
+    const { mtimeMs } = await fs.stat(file);
+    if (mtimeMs !== orcaViews.mtimeMs) {
+      const ui = JSON.parse(await fs.readFile(file, 'utf8')).ui || {};
+      orcaViews = { mtimeMs, acks: { ...ui.acknowledgedAgentsByPaneKey } };
+    }
+  } catch {
+    // Missing or being rewritten: keep what we had.
+  }
+  return orcaViews.acks;
+}
+
+// Latest view per pane from Orca and from this plugin's key presses.
+function viewTimes(orcaAcks = {}, pressed = {}) {
+  const views = { ...orcaAcks };
+  for (const [pane, at] of Object.entries(pressed)) views[pane] = Math.max(views[pane] || 0, at);
+  return views;
+}
+
+let saved = null;
+
+function loadSaved(file = STATE_FILE) {
+  if (saved) return saved;
+  try {
+    const json = JSON.parse(fsSync.readFileSync(file, 'utf8'));
+    saved = { stops: json.stops || {}, views: json.views || {} };
+  } catch {
+    saved = { stops: {}, views: {} };
+  }
+  return saved;
+}
+
+function writeSaved(file = STATE_FILE) {
+  if (!saved) return;
+  saved.dirty = false;
+  try {
+    fsSync.writeFileSync(file, JSON.stringify({ stops: saved.stops, views: saved.views }));
+  } catch {
+    // Not fatal: only restarts lose the record.
+  }
+}
+
+// Forget panes that are gone.
+function pruneSaved(state, terminals) {
+  if (!terminals.length) return;
+  const panes = new Set(terminals.map(paneKey));
+  for (const map of [state.stops, state.views]) {
+    for (const pane of Object.keys(map)) {
+      if (panes.has(pane)) continue;
+      delete map[pane];
+      state.dirty = true;
+    }
+  }
+}
+
+// A key press that opened the pane counts as viewing it (Orca records a view only when it had
+// something unread by its own hooks, so sessions with stale hooks would otherwise stay DONE).
+function markViewed(pane, now = Date.now()) {
+  if (!pane) return;
+  loadSaved().views[pane] = now;
+  writeSaved();
+}
+
 async function loadAgents() {
-  const [terminals, hooks] = await Promise.all([listTerminals(), readHookStatus()]);
+  const [terminals, hooks, acks] = await Promise.all([listTerminals(), readHookStatus(), readOrcaViews()]);
   const now = Date.now();
   const live = await liveClaudeState(terminals.filter((t) => !t.orphaned && t.connected !== false), (t) => taskLabel(t), now).catch(() => ({}));
   const meta = { ...(await readSubagentMeta(hooks)), ...(await codexSubagentMeta(hooks).catch(() => ({}))) };
-  return buildAgents(terminals, hooks, now, meta, watchTitles(terminals, now), live);
+  const state = loadSaved();
+  pruneSaved(state, terminals);
+  const watch = watchTitles(terminals, now, titleWatch, state);
+  if (state.dirty) writeSaved();
+  return buildAgents(terminals, hooks, now, meta, watch, live, viewTimes(acks, state.views));
 }
 
 function bringOrcaToFront() {
@@ -300,7 +397,7 @@ async function openSubagentView(slot) {
 }
 
 module.exports = {
-  loadAgents, buildAgents, flattenSlots, deriveStatus, watchTitles, activeSubagents, subagentMetaPath, subagentTranscriptPath, projectLabel, taskLabel,
-  focusAgent, openSubagentView, viewerTitle, shellQuote,
-  DONE_FADE_MS, SUBAGENT_STALE_MS
+  loadAgents, buildAgents, flattenSlots, deriveStatus, finishedAt, watchTitles, viewTimes, readOrcaViews, markViewed, activeSubagents, subagentMetaPath,
+  subagentTranscriptPath, projectLabel, taskLabel, focusAgent, openSubagentView, viewerTitle, shellQuote,
+  SUBAGENT_STALE_MS
 };

@@ -2,6 +2,14 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org).
 
+## [v0.3.3](https://github.com/OneAtDrt/stream_dock_orca/releases/tag/v0.3.3) — DONE means unread
+
+### Changed
+* DONE works like Orca's bell: an agent stays green, with no 30-minute timeout, until you view its tab after it finished, then turns grey within 1–2 s. The next finished turn makes it green again. The view time comes from Orca's `ui.acknowledgedAgentsByPaneKey` in `orca-data.json` (Orca records it when you open a tab with something unread, in Orca or with a Stream Dock key), re-read only when the file changes ([COMMIT])
+* Sessions with stale hook entries: a key press that opens the agent counts as viewing it (Orca doesn't record views for them), and the busy → idle title stop times and key presses are kept in `$TMPDIR/oneatdrt-orca-agents.json`, so DONE survives a Stream Dock restart ([COMMIT])
+* Files: `plugin/agents.js` (`finishedAt`, `viewTimes`, `readOrcaViews`, `markViewed`, saved state), `plugin/index.js` (key press marks the pane viewed), `plugin/agents.test.js`, `scripts/previews.js`, `README.md`, `CHANGELOG.md`; version 0.3.3 in `manifest.json`, `package.json`, `package-lock.json` ([COMMIT])
+* Tests: 29 ([COMMIT])
+
 ## [v0.3.2](https://github.com/OneAtDrt/stream_dock_orca/releases/tag/v0.3.2) — Live subagents, Codex names, subagents in summary
 
 ### Fixed

@@ -91,7 +91,9 @@ async function liveSubagents(session, now = Date.now(), configDir = CONFIG_DIR) 
   return subs.sort((a, b) => a.startedAt - b.startedAt || a.id.localeCompare(b.id));
 }
 
-// handle -> { busy, transcriptPath, subagents } for Claude terminals that have a live session.
+// handle -> { busy, status, statusAt, transcriptPath, subagents } for Claude terminals that have a live
+// session. status: Claude Code's own "busy" / "idle" / "waiting" (a dialog such as a permission
+// prompt is open); statusAt: when it last changed.
 async function liveClaudeState(terminals, taskName, now = Date.now()) {
   const sessions = await readSessions();
   const out = {};
@@ -101,6 +103,8 @@ async function liveClaudeState(terminals, taskName, now = Date.now()) {
     if (!s) continue;
     out[t.handle] = {
       busy: s.status === 'busy',
+      status: s.status,
+      statusAt: s.statusUpdatedAt || s.updatedAt || 0,
       transcriptPath: path.join(projectDir(s.cwd), `${s.sessionId}.jsonl`),
       subagents: await liveSubagents(s, now)
     };

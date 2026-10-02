@@ -2,6 +2,13 @@
 
 All notable changes to this project. Versions follow [Semantic Versioning](https://semver.org).
 
+## [v0.3.4](https://github.com/OneAtDrt/stream_dock_orca/releases/tag/v0.3.4) — WAITING clears when you answer
+
+### Fixed
+* An agent stayed WAITING after you answered its permission prompt: Orca's hook entry keeps `PermissionRequest` until the next hook event, which for an approved long command comes only when it finishes (and a spinner only overrode it after 10 min). Claude Code's own session status (`~/.claude/sessions/<pid>.json`) now wins: `waiting` while a dialog is open shows WAITING, and a status that changed after the hook's waiting entry clears it. It also catches dialogs the hooks never reported ([COMMIT])
+* Files: `plugin/agents.js` (`deriveStatus` takes the live status), `plugin/claude-sessions.js` (`status`, `statusAt`), `plugin/agents.test.js`, `plugin/claude-sessions.test.js`, `README.md`, `CHANGELOG.md`; version 0.3.4 in `manifest.json`, `package.json`, `package-lock.json` ([COMMIT])
+* Tests: 31 ([COMMIT])
+
 ## [v0.3.3](https://github.com/OneAtDrt/stream_dock_orca/releases/tag/v0.3.3) — DONE means unread
 
 ### Changed

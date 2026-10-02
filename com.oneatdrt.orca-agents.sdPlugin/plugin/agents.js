@@ -154,12 +154,17 @@ function finishedAt(hook, stoppedAt = null) {
 
 // viewedAt: when the pane was last viewed (in Orca or by a key press). A finished turn stays "done"
 // (unread, like Orca's bell) until then, with no timeout.
-function deriveStatus(terminal, hook, now, subagentCount = 0, stoppedAt = null, liveBusy = false, viewedAt = 0) {
+// live: Claude Code's own session status { status, statusAt }. It is "waiting" while a dialog (e.g. a
+// permission prompt) is open, and changes as soon as you answer, while Orca's hook entry keeps
+// "waiting" until the next hook event (for an approved long command: when it finishes).
+function deriveStatus(terminal, hook, now, subagentCount = 0, stoppedAt = null, liveBusy = false, viewedAt = 0, live = null) {
   const state = hook?.payload?.state;
   // Busy spinner in the title, or Claude Code's own session file saying "busy".
   const busy = titleIsBusy(terminal) || liveBusy;
   const hookAge = now - (hook?.receivedAt || 0);
-  if ((state === 'blocked' || state === 'waiting' || state === 'permission') && !(busy && hookAge > WAITING_TRUST_MS)) return 'waiting';
+  if (live?.status === 'waiting') return 'waiting';
+  const answered = Boolean(live?.status && live.statusAt > (hook?.receivedAt || 0));
+  if ((state === 'blocked' || state === 'waiting' || state === 'permission') && !answered && !(busy && hookAge > WAITING_TRUST_MS)) return 'waiting';
   if (subagentCount > 0) return leadIsBusy(terminal, hook) ? 'working' : 'subagents';
   if (busy) return 'working';
   if (state === 'working' && hookAge < HOOK_STALE_MS) return 'working';
@@ -228,7 +233,7 @@ function buildAgents(terminals, hookEntries, now = Date.now(), subagentMeta = {}
     const rostered = activeSubagents(hook, now, subagentMeta);
     const subagents = rostered.length ? rostered : liveState?.subagents || [];
     const stoppedAt = watch.get(terminal.handle)?.stoppedAt || null;
-    const status = deriveStatus(terminal, hook, now, subagents.length, stoppedAt, Boolean(liveState?.busy), views[pane]);
+    const status = deriveStatus(terminal, hook, now, subagents.length, stoppedAt, Boolean(liveState?.busy), views[pane], liveState);
     const since = (status === 'subagents' && subagents[0].startedAt)
       || (status === 'done' && finishedAt(hook, stoppedAt))
       || hook?.stateStartedAt || hook?.receivedAt || terminal.lastOutputAt || now;

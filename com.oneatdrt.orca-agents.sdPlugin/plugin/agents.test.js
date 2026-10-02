@@ -322,3 +322,17 @@ test('summary counts running subagents as working agents', () => {
   assert.match(decodeURIComponent(renderSummary(agents)), /ORCA · 4 \+3/);
   assert.match(decodeURIComponent(renderSummary([{ status: 'idle', subagents: [] }])), /ORCA · 1</);
 });
+
+test("Claude Code's live status beats a stale waiting hook entry", () => {
+  const perm = hook('waiting', { hookEventName: 'PermissionRequest', receivedAt: NOW - 120e3 });
+  // Answered: the session status changed after the request and isn't "waiting".
+  assert.equal(deriveStatus(term({ title: '◑ Fix login' }), perm, NOW, 0, null, true, 0, { status: 'busy', statusAt: NOW - 100e3 }), 'working');
+  assert.equal(deriveStatus(term(), perm, NOW, 0, null, false, NOW, { status: 'idle', statusAt: NOW - 100e3 }), 'idle');
+  // Still open: the session itself says "waiting", or nothing changed since the request.
+  assert.equal(deriveStatus(term({ title: '◑ Fix login' }), perm, NOW, 0, null, true, 0, { status: 'waiting', statusAt: NOW - 119e3 }), 'waiting');
+  assert.equal(deriveStatus(term({ title: '◑ Fix login' }), perm, NOW, 0, null, true, 0, { status: 'busy', statusAt: NOW - 130e3 }), 'waiting');
+  // A dialog the hooks never reported.
+  assert.equal(deriveStatus(term({ title: '◑ Fix login' }), hook('working'), NOW, 0, null, false, 0, { status: 'waiting', statusAt: NOW }), 'waiting');
+  // No live session (e.g. Codex): unchanged.
+  assert.equal(deriveStatus(term(), perm, NOW), 'waiting');
+});

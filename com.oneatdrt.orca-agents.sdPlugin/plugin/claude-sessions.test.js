@@ -54,3 +54,11 @@ test('live Claude state fills in subagents and busy when Orca hooks are stale', 
   const [plain] = buildAgents([term], stale, NOW, {}, new Map(), { h: { busy: true, subagents: [] } });
   assert.equal(plain.status, 'working'); // busy session, no subagents
 });
+
+test('live state carries the session status and when it changed', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cs-'));
+  fs.writeFileSync(path.join(dir, '1.json'), JSON.stringify({ pid: 1, sessionId: 's', cwd: '/w', status: 'waiting', statusUpdatedAt: 5 }));
+  const [s] = await readSessions(dir, () => true);
+  assert.equal(s.status, 'waiting');
+  assert.equal(s.statusUpdatedAt, 5);
+});

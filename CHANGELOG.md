@@ -5,13 +5,13 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 ## [v0.3.5](https://github.com/OneAtDrt/stream_dock_orca/releases/tag/v0.3.5) — BG status, sessions matched by id
 
 ### Added
-* **BG** status (cyan, terminal icon): the agent finished its turn but background tasks it started still run (Claude Code's "1 shell, 1 monitor still running", session status `shell`). Pills either side of the agent name show `>_ n` background shells and `∿ n` monitors; age counts from the end of the turn; counted under WORKING in the summary. Before, such an agent showed plain WORKING ([COMMIT])
-* Counts from the Claude process's children (`ps` + `lsof`, only for sessions in `shell`): a `zsh -c source …/shell-snapshots/…` child writing to `<tmp>/…/tasks/<id>.output` is a shell, one streaming into Claude is a monitor ([COMMIT])
+* **BG** status (cyan, terminal icon): the agent finished its turn but background tasks it started still run (Claude Code's "1 shell, 1 monitor still running", session status `shell`). Pills either side of the agent name show `>_ n` background shells and `∿ n` monitors; age counts from the end of the turn; counted under WORKING in the summary. Before, such an agent showed plain WORKING ([bfb2fb9](https://github.com/OneAtDrt/stream_dock_orca/commit/bfb2fb952588c14b05e59d2988eaf49ac9aa8ef4))
+* Counts from the Claude process's children (`ps` + `lsof`, only for sessions in `shell`): a `zsh -c source …/shell-snapshots/…` child writing to `<tmp>/…/tasks/<id>.output` is a shell, one streaming into Claude is a monitor ([bfb2fb9](https://github.com/OneAtDrt/stream_dock_orca/commit/bfb2fb952588c14b05e59d2988eaf49ac9aa8ef4))
 
 ### Fixed
-* Claude terminals are matched to their Claude Code session by the session id in Orca's hook entry (`providerSession.id`) before the folder/title match. Chats whose session name differs from the title (auto names like `paris-82`) in a folder with several sessions had no live status (busy / waiting / subagents); on this machine 25 of 25 Claude terminals are now matched instead of 15 ([COMMIT])
-* Files: `plugin/claude-sessions.js` (`matchSession` by id, `countBackground`, `backgroundTasks`), `plugin/agents.js` (`background` status), `plugin/render.js` (BG style, icons, pills, summary), `plugin/agents.test.js`, `plugin/claude-sessions.test.js`, `scripts/previews.js`, `docs/previews/*`, `README.md`, `CHANGELOG.md`; version 0.3.5 in `manifest.json`, `package.json`, `package-lock.json` ([COMMIT])
-* Tests: 34 ([COMMIT])
+* Claude terminals are matched to their Claude Code session by the session id in Orca's hook entry (`providerSession.id`) before the folder/title match. Chats whose session name differs from the title (auto names like `paris-82`) in a folder with several sessions had no live status (busy / waiting / subagents); on this machine 25 of 25 Claude terminals are now matched instead of 15 ([bfb2fb9](https://github.com/OneAtDrt/stream_dock_orca/commit/bfb2fb952588c14b05e59d2988eaf49ac9aa8ef4))
+* Files: `plugin/claude-sessions.js` (`matchSession` by id, `countBackground`, `backgroundTasks`), `plugin/agents.js` (`background` status), `plugin/render.js` (BG style, icons, pills, summary), `plugin/agents.test.js`, `plugin/claude-sessions.test.js`, `scripts/previews.js`, `docs/previews/*`, `README.md`, `CHANGELOG.md`; version 0.3.5 in `manifest.json`, `package.json`, `package-lock.json` ([bfb2fb9](https://github.com/OneAtDrt/stream_dock_orca/commit/bfb2fb952588c14b05e59d2988eaf49ac9aa8ef4))
+* Tests: 34 ([bfb2fb9](https://github.com/OneAtDrt/stream_dock_orca/commit/bfb2fb952588c14b05e59d2988eaf49ac9aa8ef4))
 
 ## [v0.3.4](https://github.com/OneAtDrt/stream_dock_orca/releases/tag/v0.3.4) — WAITING clears when you answer
 

@@ -4,6 +4,7 @@ const STATUS_STYLE = {
   waiting: { color: '#f59e0b', label: 'WAITING' },
   working: { color: '#3b82f6', label: 'WORKING' },
   subagents: { color: '#6366f1', label: 'SUBS' },
+  background: { color: '#0891b2', label: 'BG' },
   done: { color: '#22c55e', label: 'DONE' },
   idle: { color: '#475569', label: 'IDLE' }
 };
@@ -69,6 +70,22 @@ function subagentBadge(count, color) {
 <text x="130" y="55" ${FONT} font-size="11" font-weight="800" fill="#fff" text-anchor="end">${count > 9 ? '9+' : count}</text>`;
 }
 
+// Icons for background tasks: a terminal prompt ">_" (shell) and a pulse line (monitor).
+function shellIcon(x, y, color, width = 2, scale = 1) {
+  return `<g transform="translate(${x} ${y}) scale(${scale})"><path d="M0 0l4.5 4-4.5 4" fill="none" stroke="${color}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"/><path d="M7 9h6" stroke="${color}" stroke-width="${width}" stroke-linecap="round"/></g>`;
+}
+
+function monitorIcon(x, y, color, width = 1.6, scale = 0.9) {
+  return `<g transform="translate(${x} ${y}) scale(${scale})"><path d="M0 5h3l2-5 3 10 2-5h3" fill="none" stroke="${color}" stroke-width="${width}" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+}
+
+// BG: small pills either side of the agent name: background shells (left) and monitors (right).
+function backgroundPills(bg) {
+  if (!bg) return '';
+  const pill = (x, icon, n) => (n ? `<rect x="${x}" y="44" width="32" height="15" rx="7.5" fill="#164e63"/>${icon}<text x="${x + 27}" y="55.5" ${FONT} font-size="11" font-weight="800" fill="#cffafe" text-anchor="end">${n > 9 ? '9+' : n}</text>` : '');
+  return pill(10, shellIcon(14, 47.5, '#67e8f9', 1.6, 0.8), bg.shells) + pill(102, monitorIcon(106, 46.5, '#67e8f9'), bg.monitors);
+}
+
 // What the big text in the middle of an agent key shows: the repository or the chat (task) name.
 // 'auto' shows the chat when several agents work in the same repository, where the repo name
 // alone can't tell them apart.
@@ -104,7 +121,8 @@ function renderAgent(agent, now = Date.now(), blink = false, main = 'project') {
   const subCount = (agent.subagents || []).length;
   // Main turn over, subagents still running: fork icon instead of the dot, plus the count.
   const label = agent.status === 'subagents' ? `${style.label} ×${subCount}` : style.label;
-  const marker = agent.status === 'subagents'
+  const marker = agent.status === 'background' ? shellIcon(17, 20.5, '#fff')
+    : agent.status === 'subagents'
     ? `<path d="M20 18.5v13M20 28c0-4.5 7-4.5 7-8.5" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity="${dotOpacity}"/>
 <circle cx="20" cy="18.5" r="2.2" fill="#fff" opacity="${dotOpacity}"/><circle cx="20" cy="31.5" r="2.2" fill="#fff" opacity="${dotOpacity}"/><circle cx="27" cy="19.5" r="2.2" fill="#fff" opacity="${dotOpacity}"/>`
     : `<circle cx="23" cy="25" r="5" fill="#fff" opacity="${dotOpacity}"/>`;
@@ -118,6 +136,7 @@ ${marker}
 ${project.map((l, i) => `<text x="72" y="${projectY[i]}" ${FONT} font-size="${projectSize}" font-weight="800" fill="#f8fafc" text-anchor="middle">${escapeXml(l)}</text>`).join('')}
 ${task.map((l, i) => `<text x="72" y="${taskY[i]}" ${FONT} font-size="13" font-weight="500" fill="#94a3b8" text-anchor="middle">${escapeXml(l)}</text>`).join('')}
 ${subagentBadge(subCount, style.color)}
+${backgroundPills(agent.status === 'background' && agent.background)}
 <text x="72" y="55" ${FONT} font-size="10" font-weight="700" fill="${style.color}" text-anchor="middle" letter-spacing="1">${escapeXml(agentName)}</text>`;
   return toDataUri(svgFrame(body, border));
 }
@@ -158,15 +177,16 @@ ${lines.map((l, i) => `<text x="72" y="${72 + i * 18}" ${FONT} font-size="12" fi
   return toDataUri(svgFrame(body, '#7f1d1d'));
 }
 
-// Counts every agent that is actually working: main agents busy themselves plus each running
-// subagent (a main agent only waiting on its subagents is counted through them).
+// Counts every agent that is actually working: main agents busy themselves or running background
+// tasks (BG), plus each running subagent (a main agent only waiting on its subagents is counted
+// through them).
 function summaryCounts(agents) {
   const count = (s) => agents.filter((a) => a.status === s).length;
   const subs = agents.flatMap((a) => a.subagents || []);
   const subWaiting = subs.filter((s) => s.state !== 'working').length;
   return {
     waiting: count('waiting') + subWaiting,
-    working: count('working') + (subs.length - subWaiting),
+    working: count('working') + count('background') + (subs.length - subWaiting),
     done: count('done'),
     main: agents.length,
     subagents: subs.length

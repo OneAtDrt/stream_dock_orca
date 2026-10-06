@@ -23,7 +23,8 @@ const STATE_FILE = process.env.ORCA_AGENTS_STATE_FILE || path.join(os.tmpdir(), 
 const SAME_TURN_MS = 60 * 1000;
 
 // "subagents": the main agent's own turn is over but its subagents are still running.
-const STATUS_ORDER = { waiting: 0, working: 1, subagents: 1, done: 2, idle: 3 };
+// "background": its turn is over but background shells / monitors are still running (Claude Code "shell").
+const STATUS_ORDER = { waiting: 0, working: 1, subagents: 1, background: 1, done: 2, idle: 3 };
 
 // Hook events from the main agent itself (no toolAgentId) that mean it is still mid-turn.
 const LEAD_BUSY_EVENTS = new Set(['UserPromptSubmit', 'PreToolUse', 'PostToolUse', 'PostToolUseFailure']);
@@ -167,6 +168,7 @@ function deriveStatus(terminal, hook, now, subagentCount = 0, stoppedAt = null, 
   if ((state === 'blocked' || state === 'waiting' || state === 'permission') && !answered && !(busy && hookAge > WAITING_TRUST_MS)) return 'waiting';
   if (subagentCount > 0) return leadIsBusy(terminal, hook) ? 'working' : 'subagents';
   if (busy) return 'working';
+  if (live?.status === 'shell') return 'background';
   if (state === 'working' && hookAge < HOOK_STALE_MS) return 'working';
   const finished = finishedAt(hook, stoppedAt);
   return finished && finished > (viewedAt || 0) ? 'done' : 'idle';
@@ -235,6 +237,7 @@ function buildAgents(terminals, hookEntries, now = Date.now(), subagentMeta = {}
     const stoppedAt = watch.get(terminal.handle)?.stoppedAt || null;
     const status = deriveStatus(terminal, hook, now, subagents.length, stoppedAt, Boolean(liveState?.busy), views[pane], liveState);
     const since = (status === 'subagents' && subagents[0].startedAt)
+      || (status === 'background' && liveState.statusAt)
       || (status === 'done' && finishedAt(hook, stoppedAt))
       || hook?.stateStartedAt || hook?.receivedAt || terminal.lastOutputAt || now;
     agents.push({
@@ -248,6 +251,7 @@ function buildAgents(terminals, hookEntries, now = Date.now(), subagentMeta = {}
       task: taskLabel(terminal, hook),
       status,
       subagents,
+      background: status === 'background' ? liveState.background || { shells: 0, monitors: 0 } : null,
       since,
       lastActivity: Math.max(hook?.receivedAt || 0, terminal.lastOutputAt || 0)
     });
@@ -361,7 +365,8 @@ function markViewed(pane, now = Date.now()) {
 async function loadAgents() {
   const [terminals, hooks, acks] = await Promise.all([listTerminals(), readHookStatus(), readOrcaViews()]);
   const now = Date.now();
-  const live = await liveClaudeState(terminals.filter((t) => !t.orphaned && t.connected !== false), (t) => taskLabel(t), now).catch(() => ({}));
+  const sessionIdOf = (t) => hooks[paneKey(t)]?.providerSession?.id || null;
+  const live = await liveClaudeState(terminals.filter((t) => !t.orphaned && t.connected !== false), (t) => taskLabel(t), now, sessionIdOf).catch(() => ({}));
   const meta = { ...(await readSubagentMeta(hooks)), ...(await codexSubagentMeta(hooks).catch(() => ({}))) };
   const state = loadSaved();
   pruneSaved(state, terminals);

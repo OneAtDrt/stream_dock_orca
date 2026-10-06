@@ -336,3 +336,26 @@ test("Claude Code's live status beats a stale waiting hook entry", () => {
   // No live session (e.g. Codex): unchanged.
   assert.equal(deriveStatus(term(), perm, NOW), 'waiting');
 });
+
+test('BG: turn over, background shells / monitors still running', () => {
+  const live = { status: 'shell', statusAt: NOW - 60e3, background: { shells: 1, monitors: 1 } };
+  // Orca reports "working" for such a session; Claude Code's "shell" status wins over it.
+  assert.equal(deriveStatus(term(), hook('working', { hookEventName: 'Stop' }), NOW, 0, null, false, 0, live), 'background');
+  // A spinner (a new turn) is plain working; a permission prompt is waiting; subagents stay SUBS.
+  assert.equal(deriveStatus(term({ title: '◑ Fix login' }), hook('working'), NOW, 0, null, false, 0, live), 'working');
+  assert.equal(deriveStatus(term(), hook('working'), NOW, 0, null, false, 0, { ...live, status: 'waiting' }), 'waiting');
+  assert.equal(deriveStatus(term(), hook('working'), NOW, 1, null, false, 0, live), 'subagents');
+
+  const [agent] = buildAgents([term()], { 'tab:leaf': hook('working', { hookEventName: 'Stop' }) }, NOW, {}, new Map(), { term_1: { ...live, busy: false, subagents: [] } });
+  assert.equal(agent.status, 'background');
+  assert.deepEqual(agent.background, { shells: 1, monitors: 1 });
+  assert.equal(agent.since, NOW - 60e3);
+  const svg = decodeURIComponent(renderAgent(agent, NOW));
+  assert.match(svg, />BG</);
+  assert.match(svg, /fill="#0891b2"/);
+  assert.equal((svg.match(/fill="#164e63"/g) || []).length, 2); // shell + monitor pills
+  const onlyMonitor = decodeURIComponent(renderAgent({ ...agent, background: { shells: 0, monitors: 2 } }, NOW));
+  assert.equal((onlyMonitor.match(/fill="#164e63"/g) || []).length, 1);
+  // Counted as working in the summary.
+  assert.match(decodeURIComponent(renderSummary([agent])), /WORKING<\/text>\s*<text[^>]*>1</);
+});

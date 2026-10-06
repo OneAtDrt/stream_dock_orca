@@ -62,3 +62,28 @@ test('live state carries the session status and when it changed', async () => {
   assert.equal(s.status, 'waiting');
   assert.equal(s.statusUpdatedAt, 5);
 });
+
+test('session matched by the id from Orca before the name', () => {
+  const sessions = [
+    { sessionId: 'a', cwd: '/w', name: 'paris-82' },
+    { sessionId: 'b', cwd: '/w', name: 'Other' }
+  ];
+  const t = { worktreePath: '/w' };
+  assert.equal(matchSession(t, 'Анализ звонков', sessions, 'a').sessionId, 'a');
+  assert.equal(matchSession(t, 'Other', sessions, 'zzz').sessionId, 'b'); // unknown id: by name
+  assert.equal(matchSession(t, 'Анализ звонков', sessions), null); // two sessions, no name match
+});
+
+test('background tasks: output to a task file = shell, anything else = monitor', () => {
+  const { countBackground } = require('./claude-sessions');
+  const ps = [
+    '  100     1 claude',
+    '  201   100 /bin/zsh -c source /Users/x/.claude/shell-snapshots/snapshot-zsh-1.sh && ssh run',
+    '  202   100 /bin/zsh -c source /Users/x/.claude/shell-snapshots/snapshot-zsh-1.sh && tail -F log | grep X',
+    '  203   100 node mcp-server.cjs',
+    '  301   300 /bin/zsh -c source /Users/x/.claude/shell-snapshots/snapshot-zsh-2.sh && sleep 9'
+  ].join('\n');
+  const lsof = ['p201', 'f1', 'n/private/tmp/claude-501/-proj/sess/tasks/bgt672n5v.output', 'p202', 'f1', 'n->0x342ee3ce'].join('\n');
+  assert.deepEqual(countBackground(ps, lsof, [100]), { 100: { shells: 1, monitors: 1 } });
+  assert.deepEqual(countBackground('', '', [7]), { 7: { shells: 0, monitors: 0 } });
+});

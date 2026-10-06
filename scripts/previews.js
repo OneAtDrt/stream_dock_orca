@@ -104,6 +104,7 @@ function previews() {
     ['agent-waiting', renderAgent(byProject('my-api'), NOW), 'WAITING: needs your input'],
     ['agent-working', renderAgent(byProject('web-app'), NOW), 'WORKING'],
     ['agent-subagents', renderAgent(byProject('backend'), NOW), 'SUBS ×2: turn over, 2 subagents running'],
+    ['agent-background', renderAgent({ ...byProject('web-app'), status: 'background', background: { shells: 1, monitors: 1 }, since: NOW - 45 * 60e3 }, NOW), 'BG: turn over, 1 shell + 1 monitor running'],
     ['subagent-1', renderSubagent(subs[0], NOW), 'Subagent 1 of 2'],
     ['subagent-2', renderSubagent(subs[1], NOW), 'Subagent 2 of 2'],
     ['agent-done', renderAgent(byProject('docs-site'), NOW), 'DONE: finished, not viewed yet'],

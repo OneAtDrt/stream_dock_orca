@@ -5,10 +5,10 @@ All notable changes to this project. Versions follow [Semantic Versioning](https
 ## [v0.3.6](https://github.com/OneAtDrt/stream_dock_orca/releases/tag/v0.3.6) — Keys no longer freeze
 
 ### Fixed
-* The keys froze for days, showing old agents with ages like `3d`: one refresh never finished (a file-system promise that never settled), and since refreshes don't overlap, every later refresh was skipped. A refresh is now abandoned after 15 s and logged with the step it hung on (`refresh timed out after 15 s at: <step>`); `loadAgents` records its current step for that ([COMMIT])
-* The frozen plugin process also outlived a Stream Dock restart as an orphan (its exit hung). The plugin now forces its exit 2 s after the socket closes, and exits when its parent is gone (`ppid` 1) ([COMMIT])
-* Files: `plugin/index.js` (refresh timeout, `quit`), `plugin/agents.js` (`currentLoadStage`), `README.md`, `CHANGELOG.md`; version 0.3.6 in `manifest.json`, `package.json`, `package-lock.json` ([COMMIT])
-* Tests: 34; the timeout was checked live by making one refresh hang on purpose ([COMMIT])
+* The keys froze for days, showing old agents with ages like `3d`: one refresh never finished (a file-system promise that never settled), and since refreshes don't overlap, every later refresh was skipped. A refresh is now abandoned after 15 s and logged with the step it hung on (`refresh timed out after 15 s at: <step>`); `loadAgents` records its current step for that ([052df6c](https://github.com/OneAtDrt/stream_dock_orca/commit/052df6cb812135380a1269900ede9dedc376740c))
+* The frozen plugin process also outlived a Stream Dock restart as an orphan (its exit hung). The plugin now forces its exit 2 s after the socket closes, and exits when its parent is gone (`ppid` 1) ([052df6c](https://github.com/OneAtDrt/stream_dock_orca/commit/052df6cb812135380a1269900ede9dedc376740c))
+* Files: `plugin/index.js` (refresh timeout, `quit`), `plugin/agents.js` (`currentLoadStage`), `README.md`, `CHANGELOG.md`; version 0.3.6 in `manifest.json`, `package.json`, `package-lock.json` ([052df6c](https://github.com/OneAtDrt/stream_dock_orca/commit/052df6cb812135380a1269900ede9dedc376740c))
+* Tests: 34; the timeout was checked live by making one refresh hang on purpose ([052df6c](https://github.com/OneAtDrt/stream_dock_orca/commit/052df6cb812135380a1269900ede9dedc376740c))
 
 ## [v0.3.5](https://github.com/OneAtDrt/stream_dock_orca/releases/tag/v0.3.5) — BG status, sessions matched by id
 

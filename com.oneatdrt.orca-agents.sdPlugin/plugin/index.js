@@ -3,7 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const WebSocket = require('ws');
-const { loadAgents, flattenSlots, focusAgent, openSubagentView, markViewed } = require('./agents');
+const { loadAgents, currentLoadStage, flattenSlots, focusAgent, openSubagentView, markViewed } = require('./agents');
 const { mainTextFor, renderLimits, LIMIT_PAGES, leftColor, renderAgent, renderSubagent, renderEmpty, renderError, renderSummary } = require('./render');
 
 const SLOT_ACTION = 'com.oneatdrt.orca-agents.slot';
@@ -55,10 +55,19 @@ ws.on('open', () => {
   setInterval(refresh, REFRESH_MS);
 });
 
-ws.on('close', () => {
-  log('socket closed, exiting');
+// Exit with Stream Dock. A plugin process once survived a restart for days (its exit hung, leaving an
+// orphan with a stuck refresh), so a hung exit is forced, and a plugin left without Stream Dock
+// (parent gone, ppid 1) exits too.
+function quit(reason) {
+  log(`${reason}, exiting`);
+  setTimeout(() => process.kill(process.pid, 'SIGKILL'), 2000).unref();
   process.exit(0);
-});
+}
+
+ws.on('close', () => quit('socket closed'));
+setInterval(() => {
+  if (process.ppid === 1) quit('Stream Dock is gone');
+}, 10000).unref();
 
 ws.on('message', (raw) => {
   let message;
@@ -194,18 +203,32 @@ function hexToRgb(hex) {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
 }
 
+// A refresh step that never settles (seen once: a pending fs promise, after days of running) used
+// to leave `refreshing` set forever, freezing every key. Give up on a refresh after this long.
+const REFRESH_TIMEOUT_MS = 15000;
+
 async function refresh() {
   if (refreshing) return;
   refreshing = true;
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`timed out after ${REFRESH_TIMEOUT_MS / 1000} s at: ${currentLoadStage()}`)), REFRESH_TIMEOUT_MS);
+  });
   try {
-    agents = await loadAgents();
+    // A refresh that times out is abandoned; its late result, if any, is ignored.
+    agents = await Promise.race([loadAgents(), timeout]);
     slots = flattenSlots(agents);
     lastError = null;
   } catch (err) {
-    const message = /ENOENT/.test(err.message) ? 'Orca CLI not found' : 'Orca not running';
-    if (lastError !== message) log(`refresh failed: ${err.message}`);
-    lastError = message;
+    if (/timed out/.test(err.message)) {
+      log(`refresh ${err.message}`);
+    } else {
+      const message = /ENOENT/.test(err.message) ? 'Orca CLI not found' : 'Orca not running';
+      if (lastError !== message) log(`refresh failed: ${err.message}`);
+      lastError = message;
+    }
   } finally {
+    clearTimeout(timer);
     refreshing = false;
   }
   blink = !blink;

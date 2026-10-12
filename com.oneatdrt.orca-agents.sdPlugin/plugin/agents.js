@@ -362,17 +362,29 @@ function markViewed(pane, now = Date.now()) {
   writeSaved();
 }
 
+// The step loadAgents is in, so a refresh that never finishes can be logged with where it hung.
+let loadStage = 'idle';
+const currentLoadStage = () => loadStage;
+
 async function loadAgents() {
+  loadStage = 'orca terminals / hooks / views';
   const [terminals, hooks, acks] = await Promise.all([listTerminals(), readHookStatus(), readOrcaViews()]);
   const now = Date.now();
   const sessionIdOf = (t) => hooks[paneKey(t)]?.providerSession?.id || null;
+  loadStage = 'claude sessions';
   const live = await liveClaudeState(terminals.filter((t) => !t.orphaned && t.connected !== false), (t) => taskLabel(t), now, sessionIdOf).catch(() => ({}));
-  const meta = { ...(await readSubagentMeta(hooks)), ...(await codexSubagentMeta(hooks).catch(() => ({}))) };
+  loadStage = 'subagent meta';
+  const meta = { ...(await readSubagentMeta(hooks)) };
+  loadStage = 'codex subagent names';
+  Object.assign(meta, await codexSubagentMeta(hooks).catch(() => ({})));
+  loadStage = 'build';
   const state = loadSaved();
   pruneSaved(state, terminals);
   const watch = watchTitles(terminals, now, titleWatch, state);
   if (state.dirty) writeSaved();
-  return buildAgents(terminals, hooks, now, meta, watch, live, viewTimes(acks, state.views));
+  const result = buildAgents(terminals, hooks, now, meta, watch, live, viewTimes(acks, state.views));
+  loadStage = 'idle';
+  return result;
 }
 
 function bringOrcaToFront() {
@@ -407,7 +419,7 @@ async function openSubagentView(slot) {
 }
 
 module.exports = {
-  loadAgents, buildAgents, flattenSlots, deriveStatus, finishedAt, watchTitles, viewTimes, readOrcaViews, markViewed, activeSubagents, subagentMetaPath,
+  loadAgents, currentLoadStage, buildAgents, flattenSlots, deriveStatus, finishedAt, watchTitles, viewTimes, readOrcaViews, markViewed, activeSubagents, subagentMetaPath,
   subagentTranscriptPath, projectLabel, taskLabel, focusAgent, openSubagentView, viewerTitle, shellQuote,
   SUBAGENT_STALE_MS
 };
